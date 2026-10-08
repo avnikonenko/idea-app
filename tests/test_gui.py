@@ -210,3 +210,87 @@ def test_close_stops_pending_search_timer(window):
     assert window.close()
     assert not window.search_timer.isActive()
     assert not window.save_timer.isActive()
+
+
+def filtered_pending_edit(window, repo):
+    other = repo.create_idea("Keep second")
+    intended = repo.create_idea("Keep first")
+    window.search.setText("Keep")
+    window.refresh()
+    assert window.editor.idea_id == intended
+    window.editor.content.setPlainText("Content no longer matching search")
+    return intended, other
+
+
+@pytest.mark.parametrize("action", ["archive", "pin"])
+def test_actions_stay_bound_to_original_idea_after_flush(window, repo, action):
+    intended, other = filtered_pending_edit(window, repo)
+    getattr(window, action)()
+    assert repo.get_idea(intended).content == "Content no longer matching search"
+    if action == "archive":
+        assert repo.get_idea(intended).status == "archived"
+        assert repo.get_idea(other).status == "inbox"
+    else:
+        assert repo.get_idea(intended).pinned
+        assert not repo.get_idea(other).pinned
+
+
+@pytest.mark.parametrize("tag_name", ["Reading", "New filtered tag"])
+def test_tag_assignment_stays_bound_after_pending_content_changes(window, repo, tag_name):
+    intended, other = filtered_pending_edit(window, repo)
+    window.editor.tags.input.setText(tag_name)
+    window.editor.tags.add()
+    assert tag_name in [t.name for t in repo.get_idea(intended).tags]
+    assert tag_name not in [t.name for t in repo.get_idea(other).tags]
+
+
+def test_tag_removal_stays_bound_after_pending_content_changes(window, repo):
+    intended, other = filtered_pending_edit(window, repo)
+    tag = repo.tags()[0].id
+    repo.update_idea(intended, "Keep first", None, "inbox", False, [tag])
+    window.dirty = False
+    window.editor.load(repo.get_idea(intended))
+    window.editor.content.setPlainText("No longer matching search")
+    window.editor.tags.remove(tag)
+    assert repo.get_idea(intended).tags == ()
+    assert repo.get_idea(other).content == "Keep second"
+
+
+def test_project_creation_stays_bound_after_pending_content_changes(window, repo, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+    intended, other = filtered_pending_edit(window, repo)
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("New filtered project", True))
+    window.editor.project.create()
+    assert repo.get_idea(intended).project_name == "New filtered project"
+    assert repo.get_idea(other).project_id is None
+
+
+@pytest.mark.parametrize("name", ["Unassigned", "All projects"])
+def test_project_names_matching_selector_labels_keep_ids(window, repo, name):
+    project = repo.create_project(name)
+    identity = repo.create_idea("Original", project)
+    window.refresh()
+    window.editor.content.setPlainText("Edited")
+    assert window.flush()
+    assert repo.get_idea(identity).project_id == project
+    window.project_filter.reload(project)
+    window.project_filter.combo.setItemText(0, "All projects")
+    assert window.project_filter.value() == project
+    window.refresh()
+    assert [idea.id for idea in window.model.ideas] == [identity]
+
+
+def test_closed_context_menus_are_released(window, repo, monkeypatch, qtbot):
+    from PySide6.QtCore import QTimer, QCoreApplication, QEvent
+    from PySide6.QtWidgets import QMenu
+    import idea.ui.main_window as main_module
+    baseline = len(window.findChildren(QMenu))
+    def make_menu(parent):
+        menu = QMenu(parent)
+        QTimer.singleShot(0, menu.close)
+        return menu
+    monkeypatch.setattr(main_module, "QMenu", make_menu)
+    for _ in range(5):
+        window.context_menu(window.list.visualRect(window.list.currentIndex()).center())
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert len(window.findChildren(QMenu)) == baseline

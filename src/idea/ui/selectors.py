@@ -37,6 +37,9 @@ class ProjectSelector(QWidget):
         self.combo.blockSignals(False)
 
     def value(self):
+        current = self.combo.currentIndex()
+        if current >= 0 and self.combo.currentText() == self.combo.itemText(current):
+            return self.combo.itemData(current)
         index = self.combo.findText(self.combo.currentText(), Qt.MatchFlag.MatchFixedString)
         if index < 0:
             raise ValueError("Select an existing project, or use + to create it.")
@@ -58,8 +61,8 @@ class ProjectSelector(QWidget):
         try:
             identity = self.repo.create_project(name)
             self.reload(identity)
-            self.organization_changed.emit()
             self.changed.emit()
+            self.organization_changed.emit()
         except Exception as exc:
             QMessageBox.warning(self, "Could not create project", str(exc))
 
@@ -125,12 +128,12 @@ class TagSelector(QWidget):
             return
         try:
             tag = next((t for t in self.available if t.name.casefold() == name.casefold()), None)
+            created = tag is None
             if tag is None:
                 if not self.allow_create:
                     raise ValueError("Choose an existing tag.")
                 identity = self.repo.create_tag(name)
                 self.reload(self.selected)
-                self.organization_changed.emit()
             else:
                 identity = tag.id
             if identity not in self.selected:
@@ -138,6 +141,8 @@ class TagSelector(QWidget):
                 self.render()
                 self.changed.emit()
             self.input.clear()
+            if created:
+                self.organization_changed.emit()
         except Exception as exc:
             QMessageBox.warning(self, "Could not add tag", str(exc))
 

@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self.context_menu)
         self.splitter.addWidget(self.list)
-        self.editor = IdeaEditor(repo, before_change=self.flush)
+        self.editor = IdeaEditor(repo, before_change=lambda: self.flush(refresh=False))
         self.editor.setMinimumWidth(280)
         self.editor.edited.connect(self.mark_dirty)
         self.editor.metadata_edited.connect(self.save_metadata)
@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
         self.mark_dirty()
         self.flush()
 
-    def flush(self) -> bool:
+    def flush(self, *, refresh=True) -> bool:
         self.save_timer.stop()
         if not self.dirty or self.editor.idea_id is None:
             return True
@@ -169,7 +169,8 @@ class MainWindow(QMainWindow):
         self.editor.saved_values = values
         self.editor.set_timestamps(saved)
         self.statusBar().showMessage("Saved", 2000)
-        self.refresh(flush=False)
+        if refresh:
+            self.refresh(flush=False)
         return True
 
     def filter_changed(self, *_):
@@ -184,7 +185,7 @@ class MainWindow(QMainWindow):
     def refresh(self, *, flush=True, preferred=None):
         if self.refreshing:
             return
-        if flush and not self.flush():
+        if flush and not self.flush(refresh=False):
             return
         selected = preferred if preferred is not None else self.editor.idea_id
         scroll = self.list.verticalScrollBar().value()
@@ -267,15 +268,28 @@ class MainWindow(QMainWindow):
         self.search.setFocus()
         self.search.selectAll()
 
-    def archive(self):
-        if self.editor.idea_id is not None and self.flush():
-            self.editor.status.setCurrentIndex(self.editor.status.findData("archived"))
-            self.flush()
+    def change_idea_state(self, identity: int | None, *, archive=False, toggle_pin=False):
+        # A save can remove the edited idea from the active search/filter. Keep
+        # the action bound to the original ID, not the next selected row.
+        if identity is None or not self.flush(refresh=False):
+            return
+        try:
+            idea = self.repo.get_idea(identity)
+            self.repo.update_idea(identity, idea.content, idea.project_id,
+                                  "archived" if archive else idea.status,
+                                  not idea.pinned if toggle_pin else idea.pinned,
+                                  [tag.id for tag in idea.tags])
+            if self.editor.idea_id == identity:
+                self.editor.load(self.repo.get_idea(identity))
+            self.refresh()
+        except Exception as exc:
+            self.error("Could not update idea", exc)
 
-    def pin(self):
-        if self.editor.idea_id is not None and self.flush():
-            self.editor.pinned.setChecked(not self.editor.pinned.isChecked())
-            self.flush()
+    def archive(self, *, identity=None):
+        self.change_idea_state(self.editor.idea_id if identity is None else identity, archive=True)
+
+    def pin(self, *, identity=None):
+        self.change_idea_state(self.editor.idea_id if identity is None else identity, toggle_pin=True)
 
     def restore_archived(self, identity: int):
         if not self.flush():
@@ -343,15 +357,18 @@ class MainWindow(QMainWindow):
             self.error("Could not load idea actions", exc)
             return
         menu = QMenu(self)
-        menu.addAction("Pin / unpin", self.pin)
+        menu.addAction("Pin / unpin", lambda: self.pin(identity=identity))
         if idea.status == "archived":
             menu.addAction("Restore to Inbox", lambda: self.restore_archived(identity))
             menu.addAction("Delete permanently…", lambda: self.delete_archived(identity))
         else:
-            menu.addAction("Archive", self.archive)
+            menu.addAction("Archive", lambda: self.archive(identity=identity))
         menu.addSeparator()
         menu.addAction("Details…", lambda: self.show_details(identity))
-        menu.exec(self.list.viewport().mapToGlobal(position))
+        try:
+            menu.exec(self.list.viewport().mapToGlobal(position))
+        finally:
+            menu.deleteLater()
 
     def organization_changed(self):
         try:
@@ -369,7 +386,10 @@ class MainWindow(QMainWindow):
             return
         dialog = OrganizationManager(self.repo, kind, self)
         dialog.changed.connect(self.after_management)
-        dialog.exec()
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
 
     def after_management(self):
         # Management runs after a flush; reload associations changed by deletion.
