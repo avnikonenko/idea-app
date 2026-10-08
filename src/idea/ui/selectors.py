@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSignalBlocker
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QComboBox, QPushButton,
     QLineEdit, QCompleter, QToolButton, QInputDialog, QMessageBox, QScrollArea)
 
@@ -25,16 +25,17 @@ class ProjectSelector(QWidget):
         self.combo.lineEdit().editingFinished.connect(self.changed.emit)
         self.reload(None)
 
-    def reload(self, project_id):
-        self.combo.blockSignals(True)
-        self.combo.clear()
-        self.combo.addItem("Unassigned", None)
-        for project in self.repo.projects():
-            self.combo.addItem(project.name, project.id)
-        self.combo.setCurrentIndex(max(0, self.combo.findData(project_id)))
-        self.combo.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.combo.completer().setFilterMode(Qt.MatchFlag.MatchContains)
-        self.combo.blockSignals(False)
+    def reload(self, project_id, *, projects=None):
+        # Complete reads before clearing controls; a read error keeps the picker usable.
+        projects = self.repo.projects() if projects is None else projects
+        with QSignalBlocker(self.combo):
+            self.combo.clear()
+            self.combo.addItem("Unassigned", None)
+            for project in projects:
+                self.combo.addItem(project.name, project.id)
+            self.combo.setCurrentIndex(max(0, self.combo.findData(project_id)))
+            self.combo.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            self.combo.completer().setFilterMode(Qt.MatchFlag.MatchContains)
 
     def value(self):
         current = self.combo.currentIndex()
@@ -96,8 +97,8 @@ class TagSelector(QWidget):
         layout.addWidget(scroll)
         self.reload([])
 
-    def reload(self, tag_ids):
-        self.available = self.repo.tags()
+    def reload(self, tag_ids, *, available=None):
+        self.available = self.repo.tags() if available is None else available
         identities = {t.id for t in self.available}
         self.selected = [t for t in tag_ids if t in identities]
         completer = QCompleter([t.name for t in self.available], self.input)

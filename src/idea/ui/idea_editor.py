@@ -50,13 +50,15 @@ class IdeaEditor(QWidget):
             self.metadata_edited.emit()
 
     def load(self, idea):
+        projects = self.project.repo.projects() if idea else []
+        tags = self.tags.repo.tags() if idea else []
         self.loading = True
         try:
             self.idea_id = idea.id if idea else None
             self.setEnabled(idea is not None)
             self.content.setPlainText(idea.content if idea else "")
-            self.project.reload(idea.project_id if idea else None)
-            self.tags.reload([t.id for t in idea.tags] if idea else [])
+            self.project.reload(idea.project_id if idea else None, projects=projects)
+            self.tags.reload([t.id for t in idea.tags] if idea else [], available=tags)
             self.status.setCurrentIndex(self.status.findData(idea.status) if idea else 0)
             self.pinned.setChecked(idea.pinned if idea else False)
             self.set_timestamps(idea)

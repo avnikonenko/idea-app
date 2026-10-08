@@ -11,6 +11,7 @@ class OrganizationManager(QDialog):
     def __init__(self, repo, kind: str, parent=None):
         super().__init__(parent)
         self.repo, self.kind = repo, kind
+        self.records = []
         self.setWindowTitle(f"Manage {kind}s")
         self.resize(420, 410)
         layout = QVBoxLayout(self)
@@ -48,7 +49,12 @@ class OrganizationManager(QDialog):
         self.reload()
 
     def reload(self, *_):
-        self.records = self.repo.projects(self.search.text()) if self.kind == "project" else self.repo.tags(self.search.text())
+        try:
+            records = self.repo.projects(self.search.text()) if self.kind == "project" else self.repo.tags(self.search.text())
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not load organization", str(exc))
+            return
+        self.records = records
         self.items.clear()
         for item in self.records:
             self.items.addItem(item.name + (f"   {item.color}" if self.kind == "project" else ""))

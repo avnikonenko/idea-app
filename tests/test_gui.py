@@ -322,7 +322,7 @@ def test_context_action_keeps_original_id_when_results_change(window, repo, monk
     import idea.ui.main_window as main_module
     other = repo.create_idea("Second note")
     intended = repo.create_idea("First note")
-    window.refresh()
+    window.refresh(preferred=intended)
     assert window.editor.idea_id == intended
     def make_menu(parent):
         menu = QMenu(parent)
@@ -340,3 +340,113 @@ def test_context_action_keeps_original_id_when_results_change(window, repo, monk
     window.context_menu(window.list.visualRect(window.list.currentIndex()).center())
     assert repo.get_idea(intended).pinned
     assert not repo.get_idea(other).pinned
+
+
+def test_cancelled_capture_keeps_new_organization_available(window, repo, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+    window.quick_capture()
+    capture = window.capture
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Project from capture", True))
+    capture.project.create()
+    capture.tags.input.setText("Tag from capture")
+    capture.tags.add()
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Discard)
+    capture.reject()
+    project = next(p for p in repo.projects() if p.name == "Project from capture")
+    assert window.editor.project.combo.findData(project.id) >= 0
+    window.editor.tags.input.setText("Tag from capture")
+    window.editor.tags.add()
+    assert "Tag from capture" in [tag.name for tag in repo.get_idea(window.editor.idea_id).tags]
+
+
+@pytest.mark.parametrize("method", ["organization_changed", "after_management"])
+def test_organization_read_failures_warn_without_breaking_pickers(window, repo, monkeypatch, method):
+    warnings = []
+    monkeypatch.setattr(window, "error", lambda message, exc: warnings.append(str(exc)))
+    monkeypatch.setattr(repo, "projects", lambda *a: (_ for _ in ()).throw(sqlite3.OperationalError("simulated read error")))
+    getattr(window, method)()
+    assert warnings == ["simulated read error"]
+    assert not window.editor.project.combo.signalsBlocked()
+    assert window.editor.content.toPlainText() == "First"
+
+
+def test_selection_read_failure_preserves_current_editor(window, repo, monkeypatch):
+    identity = window.editor.idea_id
+    other = repo.create_idea("Other idea")
+    window.refresh()
+    warnings = []
+    monkeypatch.setattr(window, "error", lambda message, exc: warnings.append(str(exc)))
+    monkeypatch.setattr(repo, "tags", lambda *a: (_ for _ in ()).throw(sqlite3.OperationalError("tags read failed")))
+    index = next(n for n, idea in enumerate(window.model.ideas) if idea.id == other)
+    window.list.setCurrentIndex(window.model.index(index))
+    assert window.editor.idea_id == identity
+    assert window.editor.content.toPlainText() == "First"
+    assert window.list.currentIndex().data(Qt.ItemDataRole.UserRole).id == identity
+    assert warnings == ["tags read failed"]
+
+
+def test_failed_autosave_dialog_cannot_reenter_save(window, repo, monkeypatch):
+    identity = window.editor.idea_id
+    window.editor.content.setPlainText("Pending text")
+    monkeypatch.setattr(repo, "update_idea", lambda *a, **k: (_ for _ in ()).throw(sqlite3.OperationalError("readonly")))
+    warnings = []
+    def warning(*args):
+        warnings.append(args[1])
+        if len(warnings) == 1:
+            # Opening a modal warning can finish editing a focused metadata field.
+            window.editor.metadata_edited.emit()
+    monkeypatch.setattr(QMessageBox, "warning", warning)
+    assert not window.flush()
+    assert len(warnings) == 1
+    assert window.dirty and window.editor.content.toPlainText() == "Pending text"
+    assert repo.get_idea(identity).content == "First"
+
+
+def test_empty_editor_can_clear_after_delete_without_reading_organization(window, repo, monkeypatch):
+    monkeypatch.setattr(repo, "projects", lambda *a: pytest.fail("Empty editor should not read projects"))
+    monkeypatch.setattr(repo, "tags", lambda *a: pytest.fail("Empty editor should not read tags"))
+    window.editor.load(None)
+    assert window.editor.idea_id is None and not window.editor.isEnabled()
+
+
+@pytest.mark.parametrize("typed", ["Second project", "unfinished search"])
+def test_organization_refresh_preserves_pending_project_and_undo(window, repo, typed):
+    first = repo.create_project("First project")
+    second = repo.create_project("Second project")
+    window.editor.project.reload(first)
+    window.editor.content.insertPlainText("Pending ")
+    window.editor.project.combo.setEditText(typed)
+    window.organization_changed()
+    assert window.editor.project.combo.currentText() == typed
+    assert window.editor.content.document().isUndoAvailable()
+    assert window.editor.content.toPlainText() == "Pending First"
+    if typed == "Second project":
+        assert repo.get_idea(window.editor.idea_id).project_id == second
+    else:
+        assert window.dirty
+
+
+def test_manager_reload_failure_keeps_records_and_warns(repo, qtbot, monkeypatch):
+    from idea.ui.managers import OrganizationManager
+    manager = OrganizationManager(repo, "tag")
+    qtbot.addWidget(manager)
+    records = manager.records
+    names = [manager.items.item(n).text() for n in range(manager.items.count())]
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    monkeypatch.setattr(repo, "tags", lambda *a: (_ for _ in ()).throw(sqlite3.OperationalError("read failed")))
+    manager.reload()
+    assert manager.records == records
+    assert [manager.items.item(n).text() for n in range(manager.items.count())] == names
+    assert warnings == ["read failed"]
+
+
+def test_reloading_tags_releases_previous_completers(window):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QCompleter
+    picker = window.editor.tags
+    baseline = len(picker.input.findChildren(QCompleter))
+    for _ in range(10):
+        picker.reload(picker.selected)
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert len(picker.input.findChildren(QCompleter)) == baseline

@@ -21,6 +21,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.repo, self.config, self.config_path = repo, config, config_path
         self.dirty = False
+        self.reporting_save_error = False
         self.refreshing = False
         self.capture = None
         self.tray = None
@@ -150,6 +151,8 @@ class MainWindow(QMainWindow):
 
     def flush(self, *, refresh=True) -> bool:
         self.save_timer.stop()
+        if self.reporting_save_error:
+            return False
         if not self.dirty or self.editor.idea_id is None:
             return True
         try:
@@ -163,7 +166,11 @@ class MainWindow(QMainWindow):
             saved = self.repo.get_idea(identity)
         except Exception as exc:
             self.statusBar().showMessage("Save failed — edits retained; Ctrl+S to retry")
-            self.error("Changes could not be saved; your edits remain in the editor", exc)
+            self.reporting_save_error = True
+            try:
+                self.error("Changes could not be saved; your edits remain in the editor", exc)
+            finally:
+                self.reporting_save_error = False
             return False
         self.dirty = False
         self.editor.saved_values = values
@@ -199,14 +206,16 @@ class MainWindow(QMainWindow):
             return
         self.refreshing = True
         try:
-            self.model.replace(ideas)
-            if target is not None:
-                self.list.setCurrentIndex(self.model.index(identities.index(target)))
             if target != self.editor.idea_id:
                 self.editor.load(loaded)
                 self.dirty = False
+            self.model.replace(ideas)
+            if target is not None:
+                self.list.setCurrentIndex(self.model.index(identities.index(target)))
             self.list.verticalScrollBar().setValue(scroll)
             self.statusBar().showMessage(f"{len(ideas)} ideas" + (" · unsaved edits" if self.dirty else ""))
+        except Exception as exc:
+            self.error("Could not load idea organization", exc)
         finally:
             self.refreshing = False
 
@@ -222,11 +231,11 @@ class MainWindow(QMainWindow):
             return
         try:
             loaded = self.repo.get_idea(target)
+            self.editor.load(loaded)
         except Exception as exc:
             self.error("Could not open idea", exc)
             self.select_id(self.editor.idea_id)
             return
-        self.editor.load(loaded)
         self.select_id(target)
 
     def select_id(self, identity):
@@ -372,14 +381,31 @@ class MainWindow(QMainWindow):
 
     def organization_changed(self):
         try:
-            project = self.project_filter.value()
-        except ValueError:
-            project = None
-        self.project_filter.reload(project)
-        self.project_filter.combo.setItemText(0, "All projects")
-        self.tag_filter.reload(self.tag_filter.selected)
-        self.refresh()
-        self.list.viewport().update()
+            projects, tags = self.repo.projects(), self.repo.tags()
+            try:
+                project = self.project_filter.value()
+            except ValueError:
+                project = None
+            self.project_filter.reload(project, projects=projects)
+            self.project_filter.combo.setItemText(0, "All projects")
+            self.tag_filter.reload(self.tag_filter.selected, available=tags)
+            # Refresh choices after capture creates organization, without resetting
+            # the editor text/cursor or its pending changes.
+            editor_project = self.editor.project.combo.currentData()
+            raw_project = self.editor.project.combo.currentText()
+            try:
+                editor_project = self.editor.project.value()
+                unfinished_project = False
+            except ValueError:
+                unfinished_project = True
+            self.editor.project.reload(editor_project, projects=projects)
+            if unfinished_project:
+                self.editor.project.combo.setEditText(raw_project)
+            self.editor.tags.reload(self.editor.tags.selected, available=tags)
+            self.refresh()
+            self.list.viewport().update()
+        except Exception as exc:
+            self.error("Could not reload projects and tags", exc)
 
     def manage(self, kind):
         if not self.flush():
@@ -393,9 +419,12 @@ class MainWindow(QMainWindow):
 
     def after_management(self):
         # Management runs after a flush; reload associations changed by deletion.
-        if self.editor.idea_id is not None:
-            self.editor.load(self.repo.get_idea(self.editor.idea_id))
-        self.organization_changed()
+        try:
+            if self.editor.idea_id is not None:
+                self.editor.load(self.repo.get_idea(self.editor.idea_id))
+            self.organization_changed()
+        except Exception as exc:
+            self.error("Changes saved, but idea organization could not be reloaded", exc)
 
     def quick_capture(self):
         if self.capture is not None and self.capture.isVisible():
