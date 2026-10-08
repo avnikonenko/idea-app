@@ -28,7 +28,7 @@ def install() -> list[Path]:
     entry = ("[Desktop Entry]\nType=Application\nVersion=1.0\nName=Idea\n"
              "Comment=Capture, organize and revisit ideas\n"
              f"Exec={desktop_exec(executable)}\nIcon={icon}\n"
-             "Terminal=false\nCategories=Office;Utility;\nStartupNotify=false\n")
+             "Terminal=false\nCategories=Office;\nStartupNotify=false\n")
     payloads = {
         icon: (project / "src/idea/assets/idea-inbox.svg").read_bytes(),
         data / "applications/idea-inbox.desktop": entry.encode("utf-8"),
