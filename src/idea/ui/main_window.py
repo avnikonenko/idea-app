@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QItemSelectionModel
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -276,6 +277,57 @@ class MainWindow(QMainWindow):
             self.editor.pinned.setChecked(not self.editor.pinned.isChecked())
             self.flush()
 
+    def restore_archived(self, identity: int):
+        if not self.flush():
+            return
+        try:
+            idea = self.repo.get_idea(identity)
+            if idea.status != "archived":
+                raise ValueError("Only archived ideas can be restored from Archive.")
+            self.repo.update_idea(identity, idea.content, idea.project_id, "inbox",
+                                  idea.pinned, [tag.id for tag in idea.tags])
+            if self.editor.idea_id == identity:
+                self.editor.load(self.repo.get_idea(identity))
+            self.refresh()
+            self.statusBar().showMessage("Idea restored to Inbox", 3000)
+        except Exception as exc:
+            self.error("Could not restore idea", exc)
+
+    def delete_archived(self, identity: int):
+        if not self.flush():
+            return
+        try:
+            idea = self.repo.get_idea(identity)
+            if idea.status != "archived":
+                raise ValueError("Only archived ideas can be permanently deleted.")
+            answer = QMessageBox.question(
+                self, "Delete archived idea permanently?",
+                "Permanently delete this archived idea? This cannot be undone in Idea.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.repo.delete_idea(identity)
+            if self.editor.idea_id == identity:
+                self.editor.load(None)
+            self.refresh()
+            self.statusBar().showMessage("Archived idea deleted", 3000)
+        except Exception as exc:
+            self.error("Could not delete idea", exc)
+
+    def show_details(self, identity: int):
+        if not self.flush():
+            return
+        try:
+            idea = self.repo.get_idea(identity)
+            created = datetime.fromisoformat(idea.created_at).astimezone().isoformat(timespec="seconds")
+            modified = datetime.fromisoformat(idea.updated_at).astimezone().isoformat(timespec="seconds")
+            QMessageBox.information(self, "Idea details",
+                                    f"Created: {created}\nLast modified: {modified}")
+        except Exception as exc:
+            self.error("Could not show idea details", exc)
+
     def context_menu(self, position):
         index = self.list.indexAt(position)
         if not index.isValid():
@@ -285,9 +337,20 @@ class MainWindow(QMainWindow):
         # A failed save may have restored the previous selection.
         if self.editor.idea_id != identity:
             return
+        try:
+            idea = self.repo.get_idea(identity)
+        except Exception as exc:
+            self.error("Could not load idea actions", exc)
+            return
         menu = QMenu(self)
         menu.addAction("Pin / unpin", self.pin)
-        menu.addAction("Archive", self.archive)
+        if idea.status == "archived":
+            menu.addAction("Restore to Inbox", lambda: self.restore_archived(identity))
+            menu.addAction("Delete permanently…", lambda: self.delete_archived(identity))
+        else:
+            menu.addAction("Archive", self.archive)
+        menu.addSeparator()
+        menu.addAction("Details…", lambda: self.show_details(identity))
         menu.exec(self.list.viewport().mapToGlobal(position))
 
     def organization_changed(self):

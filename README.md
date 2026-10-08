@@ -125,7 +125,12 @@ support enabled; this application does not install desktop extensions.
   Custom colors choose black/white text for contrast, and dark mode adapts colors.
 - Drag the three panel boundaries to resize them. Panel sizes, window dimensions
   and theme persist in TOML. Light is the default; select a theme in **Theme**.
-- Right-click an idea to pin/unpin or archive. Up/Down navigate when the list has
+- Right-click an idea to pin/unpin, archive or view **Details** (creation and
+  last-modified timestamps in local time, including the UTC offset). Archived
+  ideas also offer **Restore to Inbox** and **Delete permanently**. Restore keeps
+  content, project, tags, pin and creation time; deletion asks for confirmation
+  and removes the idea and its tag/FTS associations. It cannot be undone in Idea,
+  although older backups/exports may still contain the idea. Up/Down navigate when the list has
   focus; text-editor arrow keys and selection retain their standard behavior.
 
 The project navigation is a searchable selector rather than a long project list,
@@ -255,5 +260,5 @@ result records; much larger collections, very large individual notes, one-charac
 queries, backup/export/import and slow storage can pause the UI. The tests and
 measurements cover the specified 10,000-idea dataset, not every hardware/desktop
 combination. Fresh-process startup was measured with a warm filesystem cache;
-no cold-filesystem or long-duration idle benchmark was performed. All 57 tests
+no cold-filesystem or long-duration idle benchmark was performed. All 64 tests
 passed in the final validation run.
