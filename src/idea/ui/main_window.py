@@ -13,6 +13,7 @@ from .managers import OrganizationManager
 from .quick_capture import QuickCapture
 from .styles import apply_theme
 from .dates import readable_time
+from .shortcut_settings import ShortcutSettings
 
 class MainWindow(QMainWindow):
     SAVE_DELAY_MS = 350
@@ -144,6 +145,18 @@ class MainWindow(QMainWindow):
             action = QAction(name.title(), self)
             action.triggered.connect(lambda checked=False, value=name: self.set_theme(value))
             theme.addAction(action)
+
+        settings = self.menuBar().addMenu("Settings")
+        shortcuts = QAction("Keyboard shortcuts…", self)
+        shortcuts.triggered.connect(self.show_shortcuts)
+        settings.addAction(shortcuts)
+
+    def show_shortcuts(self):
+        dialog = ShortcutSettings(self)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
 
     def error(self, message, exc):
         QMessageBox.warning(self, message, str(exc))

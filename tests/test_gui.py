@@ -450,3 +450,33 @@ def test_reloading_tags_releases_previous_completers(window):
         picker.reload(picker.selected)
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     assert len(picker.input.findChildren(QCompleter)) == baseline
+
+
+def test_shortcut_settings_lists_scopes_and_preserves_pending_edits(window, repo):
+    from PySide6.QtCore import QTimer, QCoreApplication, QEvent
+    from PySide6.QtWidgets import QLabel, QAbstractItemView
+    from idea.ui.shortcut_settings import ShortcutSettings
+    identity = window.editor.idea_id
+    window.editor.content.insertPlainText("Pending ")
+    window.save_timer.stop()
+    settings = next(a.menu() for a in window.menuBar().actions() if a.text() == "Settings")
+    inspected = []
+    def inspect_and_close():
+        dialog = window.findChild(ShortcutSettings)
+        try:
+            rows = [[dialog.table.item(row, column).text() for column in range(3)] for row in range(dialog.table.rowCount())]
+            assert ["Quick capture from any app", "Ctrl+Alt+N", "Desktop, when installed"] in rows
+            assert ["Save quick capture", "Ctrl+Enter", "Quick capture"] in rows
+            assert ["New idea", "Ctrl+N", "Main window"] in rows
+            assert dialog.table.editTriggers() == QAbstractItemView.EditTrigger.NoEditTriggers
+            assert any("GNOME Settings" in label.text() for label in dialog.findChildren(QLabel))
+            inspected.append(True)
+        finally:
+            dialog.reject()
+    QTimer.singleShot(0, inspect_and_close)
+    settings.actions()[0].trigger()
+    assert inspected == [True]
+    assert window.dirty and window.editor.content.toPlainText() == "Pending First"
+    assert repo.get_idea(identity).content == "First"
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert window.findChild(ShortcutSettings) is None

@@ -165,6 +165,9 @@ The capture window is modal to the main window, preventing conflicting edits.
 | Save quick capture | Ctrl+Enter |
 | Close quick capture | Esc, with discard confirmation |
 
+Open **Settings → Keyboard shortcuts** inside Idea for the full shortcut reference,
+including where each shortcut works and how to change the desktop binding.
+
 The shortcuts above are application-local. On Ubuntu/GNOME, install the
 system-wide **Ctrl+Alt+N** quick-capture shortcut:
 
@@ -293,7 +296,7 @@ result records; much larger collections, very large individual notes, one-charac
 queries, backup/export/import and slow storage can pause the UI. The tests and
 measurements cover the specified 10,000-idea dataset, not every hardware/desktop
 combination. Fresh-process startup was measured with a warm filesystem cache;
-no cold-filesystem or long-duration idle benchmark was performed. All 126 tests
+no cold-filesystem or long-duration idle benchmark was performed. All 127 tests
 passed in the final validation run.
 
 
