@@ -1,5 +1,6 @@
 """Install the current checkout's launcher, icon and login autostart for this user."""
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -29,14 +30,19 @@ def install() -> list[Path]:
              "Comment=Capture, organize and revisit ideas\n"
              f"Exec={desktop_exec(executable)}\nIcon={icon}\n"
              "Terminal=false\nCategories=Office;\nStartupNotify=false\n")
+    autostart = config / "autostart/idea-inbox.desktop"
+    tray_entry = entry.replace(f"Exec={desktop_exec(executable)}\n", f"Exec={desktop_exec(executable)} --tray\n")
     payloads = {
         icon: (project / "src/idea/assets/idea-inbox.svg").read_bytes(),
         data / "applications/idea-inbox.desktop": entry.encode("utf-8"),
-        config / "autostart/idea-inbox.desktop": entry.encode("utf-8"),
+        autostart: tray_entry.encode("utf-8"),
     }
-    # Preflight every file before mutation. Reruns accept identical files only.
+    # Only the exact previous installer-generated autostart entry may be upgraded.
+    legacy = entry.encode("utf-8")
+    # Preflight every file before mutation. Preserve customized entries.
     for path, content in payloads.items():
-        if path.is_symlink() or (path.exists() and (not path.is_file() or path.read_bytes() != content)):
+        allowed_legacy = path == autostart and path.is_file() and path.read_bytes() == legacy
+        if path.is_symlink() or (path.exists() and (not path.is_file() or (path.read_bytes() != content and not allowed_legacy))):
             raise FileExistsError(f"Refusing to replace existing file: {path}")
     created = []
     try:
@@ -46,6 +52,21 @@ def install() -> list[Path]:
                 with path.open("xb") as output:
                     created.append(path)
                     output.write(content)
+            elif path == autostart and path.read_bytes() == legacy:
+                temporary = None
+                try:
+                    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
+                        temporary = Path(output.name)
+                        output.write(content)
+                        output.flush()
+                        os.fsync(output.fileno())
+                    if path.is_symlink() or path.read_bytes() != legacy:
+                        raise FileExistsError(f"Entry changed during installation: {path}")
+                    temporary.chmod(path.stat().st_mode & 0o777)
+                    temporary.replace(path)
+                finally:
+                    if temporary:
+                        temporary.unlink(missing_ok=True)
             print(f"Installed: {path}")
     except Exception:
         for path in reversed(created):

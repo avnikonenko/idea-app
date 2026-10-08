@@ -1,7 +1,7 @@
 # Idea
 
 A small, local-first idea inbox for Ubuntu. Python 3.12+, PySide6, SQLite FTS5,
-and plain text. No accounts, network requests, AI, server, tray process or daemon.
+and plain text. No accounts, network requests, AI, server or daemon. A panel icon provides quick capture.
 
 ## Install and launch
 
@@ -51,7 +51,7 @@ To install the current checkout for your user:
 ```
 
 This adds **Idea** with a lightbulb icon to the application menu and launches its
-main window when you log in. It uses the per-user XDG application/autostart
+panel icon when you log in, keeping the main window hidden. It uses the per-user XDG application/autostart
 locations, following the [Freedesktop autostart specification](https://specifications.freedesktop.org/autostart/latest/).
 It does not start a daemon or change system-wide settings. The application also
 uses its bundled icon for its window, and identifies itself as `idea-inbox` for
@@ -59,10 +59,40 @@ Wayland launcher/dock association.
 
 The installer refers to this checkout's `.venv/bin/idea`; keep that directory in
 place. It refuses to replace conflicting existing files and can be rerun when
-its installed files are identical. To disable login autostart, remove only
+its installed files are identical. The exact previous installer-generated
+autostart entry can be upgraded to panel-only startup; customized entries are
+preserved. To disable login autostart, remove only
 `~/.config/autostart/idea-inbox.desktop` (or the corresponding `XDG_CONFIG_HOME`
 path); the application-menu launcher remains available. Favorites/dock pinning
 can be done through your desktop's normal **Add to Favorites** action.
+
+## Top-panel Add note icon
+
+Idea shows its lightbulb icon in your desktop's panel/tray. Select **+ Add note**
+from its menu to open quick capture, **Open Idea** to return to the main window,
+or **Quit Idea** to flush edits and exit. Desktops that support direct activation
+also open capture on a normal or middle click. On Ubuntu/GNOME, a click may open
+the menu instead; **+ Add note** is always provided.
+
+Closing the main window saves pending edits and leaves the panel icon running.
+**Quit Idea**, in the panel menu or File menu, exits; failed saves or a cancelled
+capture-discard confirmation prevent exit. Capturing from the panel uses the same
+process, database and error handling as the editor. There is no floating desktop
+window or always-on-top window. Panel-only startup preserves the editor's saved
+size and splitter positions even when the editor was never opened.
+
+```bash
+.venv/bin/idea --tray     # Panel-only startup; fallback to editor if unsupported
+.venv/bin/idea --no-tray  # Main window only; closing it exits
+```
+
+The icon uses [Qt's Linux tray support](https://doc.qt.io/qt-6/qsystemtrayicon.html)
+and requires a desktop tray/StatusNotifier host. This Ubuntu Wayland session has
+that support already. If it is unavailable, Idea shows the ordinary window
+instead of leaving an inaccessible hidden application. Qt can register the icon
+later if the panel is still starting at login. Exact icon ordering is controlled
+by your desktop. Other Ubuntu installations may need their normal panel tray
+support enabled; this application does not install desktop extensions.
 
 ## Capture, organize and find ideas
 
@@ -122,8 +152,9 @@ The capture window is modal to the main window, preventing conflicting edits.
 | Save quick capture | Ctrl+Enter |
 | Close quick capture | Esc, with discard confirmation |
 
-These shortcuts are application-local. There is no global shortcut or background
-process in this MVP; this avoids desktop-specific Wayland shortcut behavior.
+These shortcuts are application-local. There is no global shortcut in this MVP; this avoids desktop-specific Wayland
+shortcut behavior. The explicitly enabled panel icon keeps this same GUI process
+alive when its main window is hidden.
 
 ## Storage, backups and restoration
 
@@ -224,5 +255,5 @@ result records; much larger collections, very large individual notes, one-charac
 queries, backup/export/import and slow storage can pause the UI. The tests and
 measurements cover the specified 10,000-idea dataset, not every hardware/desktop
 combination. Fresh-process startup was measured with a warm filesystem cache;
-no cold-filesystem or long-duration idle benchmark was performed. All 46 tests
+no cold-filesystem or long-duration idle benchmark was performed. All 57 tests
 passed in the final validation run.

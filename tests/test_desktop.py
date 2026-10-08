@@ -40,3 +40,20 @@ def test_desktop_exec_quoting():
     assert installer.desktop_exec(Path('/tmp/path with spaces/idea')) == '"/tmp/path with spaces/idea"'
     with pytest.raises(ValueError):
         installer.desktop_exec(Path('/tmp/not=valid'))
+
+
+def test_previous_autostart_is_upgraded_but_custom_flags_are_preserved(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    paths = installer.install()
+    autostart = paths[-1]
+    assert ' --tray\n' in autostart.read_text()
+    old = autostart.read_text().replace(' --tray\n', '\n')
+    autostart.write_text(old)
+    installer.install()
+    assert ' --tray\n' in autostart.read_text()
+    custom = autostart.read_text() + 'Hidden=true\n'
+    autostart.write_text(custom)
+    with pytest.raises(FileExistsError):
+        installer.install()
+    assert autostart.read_text() == custom

@@ -8,12 +8,16 @@ from .config import Config, config_path, data_path
 from .database import Database
 from .repository import Repository
 from .ui.main_window import MainWindow
+from .ui.tray import IdeaTray
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Idea — local-first idea inbox")
     parser.add_argument("--database", type=Path, help="Use a separate database (for testing or portable storage)")
     parser.add_argument("--config", type=Path, help="Use a separate TOML configuration")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--tray", action="store_true", help="Start in the panel; show the window if no tray is available")
+    modes.add_argument("--no-tray", action="store_true", help="Run without a panel icon; closing the window exits")
     args = parser.parse_args(argv)
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Idea")
@@ -45,8 +49,19 @@ def main(argv=None) -> int:
         return 1
     try:
         window = MainWindow(Repository(database), config, cfg_path)
-        window.show()
-        return app.exec()
+        if not args.no_tray:
+            window.tray = IdeaTray(window)
+        tray_available = window.tray is not None and window.tray.available()
+        app.setQuitOnLastWindowClosed(not tray_available)
+        if not args.tray or not tray_available:
+            window.show()
+            if args.tray and not tray_available:
+                window.statusBar().showMessage("Panel tray unavailable — use this window to capture ideas.")
+        try:
+            return app.exec()
+        finally:
+            if window.tray is not None:
+                window.tray.hide()
     finally:
         database.close()
         lock.unlock()

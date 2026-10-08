@@ -22,6 +22,9 @@ class MainWindow(QMainWindow):
         self.dirty = False
         self.refreshing = False
         self.capture = None
+        self.tray = None
+        self.quitting = False
+        self.shown_once = False
         self.setWindowTitle("Idea")
         self.resize(config.width, config.height)
         self.setMinimumSize(700, 480)
@@ -122,6 +125,10 @@ class MainWindow(QMainWindow):
             action = QAction(name, self)
             action.triggered.connect(callback)
             file.addAction(action)
+        file.addSeparator()
+        quit_action = QAction("Quit Idea", self)
+        quit_action.triggered.connect(self.quit_application)
+        file.addAction(quit_action)
         theme = self.menuBar().addMenu("Theme")
         for name in ("light", "dark"):
             action = QAction(name.title(), self)
@@ -383,6 +390,29 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.error(message, exc)
 
+    def showEvent(self, event):
+        self.shown_once = True
+        super().showEvent(event)
+
+    def open_window(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if self.capture is not None and self.capture.isVisible():
+            self.capture.raise_()
+            self.capture.activateWindow()
+
+    def quit_application(self) -> bool:
+        self.quitting = True
+        if not self.close():
+            self.quitting = False
+            self.open_window()
+            return False
+        if self.tray is not None:
+            self.tray.hide()
+        QApplication.instance().quit()
+        return True
+
     def closeEvent(self, event):
         if self.capture is not None and self.capture.isVisible():
             if not self.capture.can_discard():
@@ -393,12 +423,19 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.config_path:
-            self.config.splitter = self.splitter.sizes()
-            self.config.width, self.config.height = self.width(), self.height()
+            if self.shown_once:
+                self.config.splitter = self.splitter.sizes()
+                self.config.width, self.config.height = self.width(), self.height()
             try:
                 self.config.save(self.config_path)
             except Exception as exc:
                 self.error("Ideas saved, but window preferences could not be saved", exc)
         self.save_timer.stop()
         self.search_timer.stop()
-        event.accept()
+        if not self.quitting and self.tray is not None and self.tray.available():
+            # A hidden editor must not cause quick-capture closure to quit Idea.
+            QApplication.instance().setQuitOnLastWindowClosed(False)
+            self.hide()
+            event.ignore()
+        else:
+            event.accept()
