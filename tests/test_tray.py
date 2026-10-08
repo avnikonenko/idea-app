@@ -104,6 +104,7 @@ def test_no_panel_falls_back_to_normal_close(tray_window, monkeypatch):
     monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", lambda: False)
     assert tray_window.close()
     assert not tray_window.isVisible()
+    assert QApplication.instance().quitOnLastWindowClosed()
 
 
 def test_panel_click_reuses_capture(tray_window):
@@ -114,3 +115,16 @@ def test_panel_click_reuses_capture(tray_window):
     assert window.capture is first
     window.tray.activated(QSystemTrayIcon.ActivationReason.Context)
     assert window.capture is first
+
+
+def test_missing_panel_after_hiding_does_not_leave_an_invisible_process(tray_window, monkeypatch):
+    window = tray_window
+    window.close()
+    assert not QApplication.instance().quitOnLastWindowClosed()
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", lambda: False)
+    quit_calls = []
+    monkeypatch.setattr(QApplication.instance(), "quit", lambda: quit_calls.append(True))
+    assert window.close()
+    assert QApplication.instance().quitOnLastWindowClosed()
+    assert not window.tray.icon.isVisible()
+    assert quit_calls == [True]

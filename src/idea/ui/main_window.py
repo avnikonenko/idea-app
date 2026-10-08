@@ -521,4 +521,9 @@ class MainWindow(QMainWindow):
             self.hide()
             event.ignore()
         else:
+            QApplication.instance().setQuitOnLastWindowClosed(True)
+            if self.tray is not None:
+                self.tray.hide()
             event.accept()
+            if not self.quitting and self.tray is not None and not self.isVisible():
+                QApplication.instance().quit()
