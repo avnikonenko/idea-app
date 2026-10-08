@@ -20,8 +20,8 @@ def install() -> list[Path]:
     executable = project / ".venv/bin/idea"
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise ValueError("Install Idea in this checkout's .venv first; see README.md.")
-    data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    config = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     if not data.is_absolute() or not config.is_absolute():
         raise ValueError("XDG directories must be absolute paths")
     icon = data / "icons/hicolor/scalable/apps/idea-inbox.svg"

@@ -1,16 +1,28 @@
 import os
+import logging
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 import tempfile
 
 
+def _xdg_directory(variable: str, default: Path) -> Path:
+    value = os.environ.get(variable)
+    if not value:
+        return default
+    path = Path(value)
+    if not path.is_absolute():
+        logging.getLogger(__name__).warning("Ignoring relative %s; using its default directory", variable)
+        return default
+    return path
+
+
 def data_path() -> Path:
-    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "idea" / "ideas.db"
+    return _xdg_directory("XDG_DATA_HOME", Path.home() / ".local/share") / "idea" / "ideas.db"
 
 
 def config_path() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "idea" / "config.toml"
+    return _xdg_directory("XDG_CONFIG_HOME", Path.home() / ".config") / "idea" / "config.toml"
 
 @dataclass
 class Config:

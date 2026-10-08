@@ -57,3 +57,12 @@ def test_previous_autostart_is_upgraded_but_custom_flags_are_preserved(tmp_path,
     with pytest.raises(FileExistsError):
         installer.install()
     assert autostart.read_text() == custom
+
+
+def test_empty_xdg_environment_uses_default_user_directories(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", "")
+    monkeypatch.setenv("XDG_CONFIG_HOME", "")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    paths = installer.install()
+    assert paths[0] == tmp_path / ".local/share/icons/hicolor/scalable/apps/idea-inbox.svg"
+    assert paths[-1] == tmp_path / ".config/autostart/idea-inbox.desktop"

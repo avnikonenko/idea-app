@@ -14,3 +14,14 @@ def test_config_atomic_roundtrip_and_xdg(tmp_path, monkeypatch):
     path.write_text('theme = "invalid"')
     with pytest.raises(ValueError):
         Config.load(path)
+
+
+@pytest.mark.parametrize("value", ["", "relative/path"])
+def test_invalid_or_empty_xdg_variables_use_stable_defaults(monkeypatch, value, caplog):
+    from pathlib import Path
+    monkeypatch.setenv("XDG_DATA_HOME", value)
+    monkeypatch.setenv("XDG_CONFIG_HOME", value)
+    assert data_path() == Path.home() / ".local/share/idea/ideas.db"
+    assert config_path() == Path.home() / ".config/idea/config.toml"
+    if value:
+        assert "XDG_DATA_HOME" in caplog.text and "XDG_CONFIG_HOME" in caplog.text
