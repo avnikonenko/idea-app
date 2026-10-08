@@ -7,7 +7,7 @@ from idea.models import DEFAULT_TAGS
 def test_initialization_reopen_and_newer_schema(tmp_path):
     path = tmp_path / "db"
     db = Database(path)
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 2
     assert db.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert db.connection.execute("SELECT COUNT(*) FROM tags").fetchone()[0] == len(DEFAULT_TAGS)
     db.close()

@@ -1,7 +1,7 @@
 import re
 from collections.abc import Iterable
 from .database import Database, now
-from .models import Idea, Project, Tag, STATUSES
+from .models import Idea, Project, Tag, Group, STATUSES
 
 
 def valid_name(name: str) -> str:
@@ -22,10 +22,37 @@ def valid_color(color: str) -> str:
 def like_literal(value: str) -> str:
     return "%" + value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
+_UNCHANGED = object()
+
 class Repository:
     def __init__(self, database: Database):
         self.db = database
         self.conn = database.connection
+
+    def groups(self, query: str = "") -> list[Group]:
+        rows = self.conn.execute("SELECT id,name FROM groups WHERE name_key LIKE ? ESCAPE '\\' ORDER BY name_key,id", (like_literal(query.casefold()),))
+        return [Group(**dict(row)) for row in rows]
+
+    def _group_name(self, name: str) -> str:
+        name = valid_name(name)
+        if name.casefold() in {"all ideas", "inbox", "pinned", "active", "someday", "archive", "archived"}:
+            raise ValueError("Choose a name different from a built-in view.")
+        return name
+
+    def create_group(self, name: str) -> int:
+        name = self._group_name(name)
+        with self.conn:
+            return self.conn.execute("INSERT INTO groups(name,name_key) VALUES(?,?)", (name, name.casefold())).lastrowid
+
+    def update_group(self, group_id: int, name: str) -> None:
+        name = self._group_name(name)
+        with self.conn:
+            self.conn.execute("UPDATE groups SET name=?,name_key=? WHERE id=?", (name, name.casefold(), group_id))
+
+    def delete_group(self, group_id: int) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE ideas SET group_id=NULL,status='inbox',updated_at=? WHERE group_id=?", (now(), group_id))
+            self.conn.execute("DELETE FROM groups WHERE id=?", (group_id,))
 
     def projects(self, query: str = "") -> list[Project]:
         rows = self.conn.execute("SELECT id,name,color,created_at FROM projects WHERE name_key LIKE ? ESCAPE '\\' ORDER BY name_key,id", (like_literal(query.casefold()),))
@@ -65,28 +92,34 @@ class Repository:
 
     def _write_idea(self, content: str, project_id: int | None, status: str,
                     pinned: bool, tags: Iterable[int], idea_id: int | None = None,
-                    created_at: str | None = None, updated_at: str | None = None) -> int:
+                    created_at: str | None = None, updated_at: str | None = None,
+                    group_id=_UNCHANGED) -> int:
         if status not in STATUSES or not isinstance(content, str):
             raise ValueError("Invalid idea content or status")
+        if group_id is _UNCHANGED:
+            row = self.conn.execute("SELECT group_id FROM ideas WHERE id=?", (idea_id,)).fetchone() if idea_id is not None else None
+            group_id = row[0] if row and status == "inbox" else None
+        if group_id is not None and status != "inbox":
+            raise ValueError("Custom groups cannot be combined with another status.")
         timestamp = now()
         if idea_id is None:
-            idea_id = self.conn.execute("INSERT INTO ideas(content,project_id,status,pinned,created_at,updated_at) VALUES(?,?,?,?,?,?)", (content, project_id, status, int(pinned), created_at or timestamp, updated_at or timestamp)).lastrowid
+            idea_id = self.conn.execute("INSERT INTO ideas(content,project_id,status,pinned,created_at,updated_at,group_id) VALUES(?,?,?,?,?,?,?)", (content, project_id, status, int(pinned), created_at or timestamp, updated_at or timestamp, group_id)).lastrowid
         else:
-            if self.conn.execute("UPDATE ideas SET content=?,project_id=?,status=?,pinned=?,updated_at=? WHERE id=?", (content, project_id, status, int(pinned), timestamp, idea_id)).rowcount != 1:
+            if self.conn.execute("UPDATE ideas SET content=?,project_id=?,status=?,pinned=?,updated_at=?,group_id=? WHERE id=?", (content, project_id, status, int(pinned), timestamp, group_id, idea_id)).rowcount != 1:
                 raise ValueError("This idea no longer exists.")
             self.conn.execute("DELETE FROM idea_tags WHERE idea_id=?", (idea_id,))
         self.conn.executemany("INSERT INTO idea_tags(idea_id,tag_id) VALUES(?,?)", [(idea_id, tag) for tag in sorted(set(tags))])
         return idea_id
 
     def create_idea(self, content: str = "", project_id: int | None = None,
-                    status: str = "inbox", pinned: bool = False, tags: Iterable[int] = ()) -> int:
+                    status: str = "inbox", pinned: bool = False, tags: Iterable[int] = (), *, group_id: int | None = None) -> int:
         with self.conn:
-            return self._write_idea(content, project_id, status, pinned, tags)
+            return self._write_idea(content, project_id, status, pinned, tags, group_id=group_id)
 
     def update_idea(self, idea_id: int, content: str, project_id: int | None,
-                    status: str, pinned: bool, tags: Iterable[int]) -> None:
+                    status: str, pinned: bool, tags: Iterable[int], *, group_id=_UNCHANGED) -> None:
         with self.conn:
-            self._write_idea(content, project_id, status, pinned, tags, idea_id)
+            self._write_idea(content, project_id, status, pinned, tags, idea_id, group_id=group_id)
 
     def delete_idea(self, idea_id: int) -> None:
         with self.conn:
@@ -102,12 +135,15 @@ class Repository:
 
     def search(self, query: str = "", *, project_id: int | None = None,
                tag_ids: Iterable[int] = (), status: str | None = None,
-               pinned: bool | None = None, idea_id: int | None = None) -> list[Idea]:
+               pinned: bool | None = None, idea_id: int | None = None,
+               group_id: int | None = None, ungrouped: bool = False) -> list[Idea]:
         conditions, params = [], []
-        for column, value in (("i.project_id", project_id), ("i.status", status), ("i.pinned", pinned), ("i.id", idea_id)):
+        for column, value in (("i.project_id", project_id), ("i.status", status), ("i.pinned", pinned), ("i.id", idea_id), ("i.group_id", group_id)):
             if value is not None:
                 conditions.append(f"{column}=?")
                 params.append(value)
+        if ungrouped:
+            conditions.append("i.group_id IS NULL")
         for tag in sorted(set(tag_ids)):
             conditions.append("EXISTS(SELECT 1 FROM idea_tags it WHERE it.idea_id=i.id AND it.tag_id=?)")
             params.append(tag)
@@ -120,7 +156,7 @@ class Repository:
                 content_sql, content_param = "i.content LIKE ? ESCAPE '\\'", like_literal(term)
             conditions.append(f"({content_sql} OR p.name_key LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM idea_tags it JOIN tags t ON t.id=it.tag_id WHERE it.idea_id=i.id AND t.name_key LIKE ? ESCAPE '\\'))")
             params.extend((content_param, like_literal(term.casefold()), like_literal(term.casefold())))
-        sql = "SELECT i.*,p.name AS project_name,p.color AS project_color FROM ideas i LEFT JOIN projects p ON p.id=i.project_id"
+        sql = "SELECT i.*,p.name AS project_name,p.color AS project_color,g.name AS group_name FROM ideas i LEFT JOIN projects p ON p.id=i.project_id LEFT JOIN groups g ON g.id=i.group_id"
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
         sql += " ORDER BY i.pinned DESC,i.updated_at DESC,i.id DESC"

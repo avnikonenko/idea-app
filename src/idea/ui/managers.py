@@ -21,7 +21,7 @@ class OrganizationManager(QDialog):
         self.items = QListWidget()
         layout.addWidget(self.items)
         row = QHBoxLayout()
-        for label, function in (("Create", self.create), ("Rename", self.rename), ("Delete", self.delete)):
+        for label, function in (("Create", self.create), ("Rename", self.rename), ("Remove" if kind == "group" else "Delete", self.delete)):
             button = QPushButton(label)
             button.clicked.connect(function)
             row.addWidget(button)
@@ -50,7 +50,7 @@ class OrganizationManager(QDialog):
 
     def reload(self, *_):
         try:
-            records = self.repo.projects(self.search.text()) if self.kind == "project" else self.repo.tags(self.search.text())
+            records = getattr(self.repo, self.kind + "s")(self.search.text())
         except Exception as exc:
             QMessageBox.warning(self, "Could not load organization", str(exc))
             return
@@ -74,7 +74,7 @@ class OrganizationManager(QDialog):
     def create(self):
         name, ok = QInputDialog.getText(self, f"Create {self.kind}", "Name:")
         if ok:
-            self.run(lambda: self.repo.create_project(name) if self.kind == "project" else self.repo.create_tag(name))
+            self.run(lambda: getattr(self.repo, "create_" + self.kind)(name))
 
     def rename(self):
         item = self.selected()
@@ -82,14 +82,16 @@ class OrganizationManager(QDialog):
             return
         name, ok = QInputDialog.getText(self, f"Rename {self.kind}", "Name:", text=item.name)
         if ok:
-            self.run(lambda: self.repo.update_project(item.id, name, item.color) if self.kind == "project" else self.repo.update_tag(item.id, name))
+            self.run(lambda: self.repo.update_project(item.id, name, item.color) if self.kind == "project" else getattr(self.repo, "update_" + self.kind)(item.id, name))
 
     def delete(self):
         item = self.selected()
         if not item:
             return
-        if QMessageBox.question(self, f"Delete {self.kind}?", f"Delete “{item.name}”? Its ideas will be kept.") == QMessageBox.StandardButton.Yes:
-            self.run(lambda: self.repo.delete_project(item.id) if self.kind == "project" else self.repo.delete_tag(item.id))
+        message = (f"Remove “{item.name}”? All its ideas will return to Inbox. No ideas will be deleted."
+                   if self.kind == "group" else f"Delete “{item.name}”? Its ideas will be kept.")
+        if QMessageBox.question(self, f"Remove {self.kind}?", message, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self.run(lambda: getattr(self.repo, "delete_" + self.kind)(item.id))
 
     def color(self, color):
         item = self.selected()

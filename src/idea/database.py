@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from .models import DEFAULT_TAGS
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -28,10 +28,15 @@ class Database:
             )}
             if version == 0 and tables:
                 raise ValueError("This is not an empty or versioned Idea database; it was left unchanged.")
-            if version == SCHEMA_VERSION:
+            if version in (1, 2):
                 expected = {"ideas", "projects", "tags", "idea_tags", "ideas_fts"}
                 if not expected <= tables:
                     raise ValueError("This database is missing required Idea tables; it was left unchanged.")
+                if version == 2:
+                    if "groups" not in tables:
+                        raise ValueError("This database is missing Idea groups; it was left unchanged.")
+                    self.connection.execute("SELECT id,name,name_key FROM groups LIMIT 0")
+                    self.connection.execute("SELECT group_id FROM ideas LIMIT 0")
                 # Prepare reads before backup/WAL setup so mismatched schemas fail
                 # explicitly without changing an existing file.
                 for table, columns in (
@@ -45,6 +50,9 @@ class Database:
                 self.daily_backup(force=version < SCHEMA_VERSION)
             if version == 0:
                 self._initialize()
+                version = 1
+            if version == 1:
+                self._migrate_groups()
             self.connection.execute("PRAGMA journal_mode = WAL")
             self.connection.execute("PRAGMA synchronous = FULL")
             if automatic_backup:
@@ -100,11 +108,24 @@ class Database:
         try:
             self.connection.executemany("INSERT INTO tags(name,name_key) VALUES(?,?)",
                                         [(name, name.casefold()) for name in DEFAULT_TAGS])
-            self.connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            self.connection.execute("PRAGMA user_version = 1")
             self.connection.commit()
         except Exception:
             self.connection.rollback()
             raise
+
+    def _migrate_groups(self) -> None:
+        self.connection.executescript("""
+            BEGIN IMMEDIATE;
+            CREATE TABLE groups (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+                name_key TEXT NOT NULL UNIQUE
+            );
+            ALTER TABLE ideas ADD COLUMN group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL;
+            CREATE INDEX ideas_group_sort ON ideas(group_id, pinned DESC, updated_at DESC, id DESC);
+            PRAGMA user_version = 2;
+            COMMIT;
+        """)
 
     def backup(self, destination: Path) -> Path:
         if self.connection.in_transaction:

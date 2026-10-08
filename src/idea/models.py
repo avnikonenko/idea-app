@@ -16,6 +16,11 @@ class Project:
     created_at: str
 
 @dataclass(frozen=True)
+class Group:
+    id: int
+    name: str
+
+@dataclass(frozen=True)
 class Tag:
     id: int
     name: str
@@ -32,6 +37,9 @@ class Idea:
     project_name: str | None = None
     project_color: str | None = None
     tags: tuple[Tag, ...] = field(default_factory=tuple)
+
+    group_id: int | None = None
+    group_name: str | None = None
 
     @property
     def title(self) -> str:

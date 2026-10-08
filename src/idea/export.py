@@ -9,7 +9,7 @@ from pathlib import Path
 from .models import STATUSES, Project
 from .repository import Repository, valid_name, valid_color
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 @contextmanager
 def new_text_file(path: Path):
@@ -37,7 +37,8 @@ def export_json(repo: Repository, path: Path) -> None:
             idea["tag_ids"] = associations.get(idea["id"], [])
         payload = {"format": "idea-inbox", "version": FORMAT_VERSION,
                    "projects": [asdict(p) for p in repo.projects()],
-                   "tags": [asdict(t) for t in repo.tags()], "ideas": ideas}
+                   "tags": [asdict(t) for t in repo.tags()],
+                   "groups": [asdict(g) for g in repo.groups()], "ideas": ideas}
     with new_text_file(Path(path)) as output:
         json.dump(payload, output, ensure_ascii=False, indent=2)
         output.write("\n")
@@ -59,10 +60,10 @@ def _timestamp(value) -> str:
 
 
 def validate_payload(payload: dict) -> None:
-    if not isinstance(payload, dict) or payload.get("format") != "idea-inbox" or type(payload.get("version")) is not int or payload["version"] != FORMAT_VERSION:
+    if not isinstance(payload, dict) or payload.get("format") != "idea-inbox" or type(payload.get("version")) is not int or payload["version"] not in (1, FORMAT_VERSION):
         raise ValueError("Unsupported Idea JSON format/version")
     ids = {}
-    for kind in ("projects", "tags", "ideas"):
+    for kind in ("projects", "tags", "ideas", "groups") if payload["version"] == 2 else ("projects", "tags", "ideas"):
         rows = payload.get(kind)
         if not isinstance(rows, list):
             raise ValueError(f"Missing {kind} array")
@@ -83,6 +84,9 @@ def validate_payload(payload: dict) -> None:
             if kind == "projects":
                 valid_color(row.get("color"))
                 _timestamp(row.get("created_at"))
+    for group in payload.get("groups", []) if payload["version"] == 2 else []:
+        if group["name"].strip().casefold() in {"all ideas", "inbox", "pinned", "active", "someday", "archive", "archived"}:
+            raise ValueError("Custom group uses a reserved view name")
     for idea in payload["ideas"]:
         if not isinstance(idea.get("content"), str) or idea.get("status") not in STATUSES or type(idea.get("pinned")) is not bool:
             raise ValueError("Invalid idea content/status/pinned flag")
@@ -93,6 +97,12 @@ def validate_payload(payload: dict) -> None:
         project = idea["project_id"]
         if project is not None and _identifier(project) not in ids["projects"]:
             raise ValueError("Unknown project reference")
+        if payload["version"] == 2:
+            if "group_id" not in idea:
+                raise ValueError("Missing idea group_id")
+            group = idea["group_id"]
+            if group is not None and (_identifier(group) not in ids["groups"] or idea["status"] != "inbox"):
+                raise ValueError("Invalid group reference or status")
         tags = idea.get("tag_ids")
         if not isinstance(tags, list) or any(_identifier(tag) not in ids["tags"] for tag in tags) or len(tags) != len(set(tags)):
             raise ValueError("Invalid tag references")
@@ -105,7 +115,7 @@ def import_json(repo: Repository, path: Path) -> int:
     # Never reuse idea IDs. Reuse exact organization matches; preserve conflicting
     # project colors by making a uniquely named imported project.
     with repo.conn:
-        project_map, tag_map = {}, {}
+        project_map, tag_map, group_map = {}, {}, {}
         projects = {p.name.casefold(): p for p in repo.projects()}
         for project in payload["projects"]:
             name, color = valid_name(project["name"]), valid_color(project["color"])
@@ -126,8 +136,14 @@ def import_json(repo: Repository, path: Path) -> int:
             if name.casefold() not in tags:
                 tags[name.casefold()] = repo.conn.execute("INSERT INTO tags(name,name_key) VALUES(?,?)", (name, name.casefold())).lastrowid
             tag_map[tag["id"]] = tags[name.casefold()]
+        groups = {g.name.casefold(): g.id for g in repo.groups()}
+        for group in payload.get("groups", []) if payload["version"] == 2 else []:
+            name = valid_name(group["name"])
+            if name.casefold() not in groups:
+                groups[name.casefold()] = repo.conn.execute("INSERT INTO groups(name,name_key) VALUES(?,?)", (name, name.casefold())).lastrowid
+            group_map[group["id"]] = groups[name.casefold()]
         for idea in payload["ideas"]:
-            repo._write_idea(idea["content"], project_map.get(idea["project_id"]), idea["status"], idea["pinned"], [tag_map[t] for t in idea["tag_ids"]], created_at=_timestamp(idea["created_at"]), updated_at=_timestamp(idea["updated_at"]))
+            repo._write_idea(idea["content"], project_map.get(idea["project_id"]), idea["status"], idea["pinned"], [tag_map[t] for t in idea["tag_ids"]], created_at=_timestamp(idea["created_at"]), updated_at=_timestamp(idea["updated_at"]), group_id=group_map.get(idea.get("group_id")) if payload["version"] == 2 else None)
     return len(payload["ideas"])
 
 
@@ -141,7 +157,7 @@ def export_markdown(repo: Repository, directory: Path) -> int:
     for idea in ideas:
         title = re.sub(r"[^\w .-]", "_", idea.title, flags=re.UNICODE).strip(" .").encode("utf-8")[:180].decode("utf-8", errors="ignore") or "idea"
         metadata = {"id": idea.id, "project": idea.project_name, "project_color": idea.project_color,
-                    "tags": [tag.name for tag in idea.tags], "status": idea.status,
+                    "tags": [tag.name for tag in idea.tags], "status": idea.status, "group": idea.group_name,
                     "pinned": idea.pinned, "created_at": idea.created_at, "updated_at": idea.updated_at}
         with new_text_file(directory / f"{idea.id}-{title}.md") as output:
             output.write("```json\n" + json.dumps(metadata, ensure_ascii=False, indent=2) + "\n```\n\n" + idea.content + "\n")

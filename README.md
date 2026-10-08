@@ -107,6 +107,14 @@ support enabled; this application does not install desktop extensions.
   process crash or power loss.
 - Choose Inbox, Active, Someday, Archive, Pinned or All ideas on the left. Combine
   a view with **Pinned only**, a project and multiple tags. Tags use AND semantics.
+- **Manage groups** lets you create, rename, search and remove custom sidebar
+  groups. Choose a group in the editor or use **Move to group** in the idea's
+  right-click menu. **Remove from group → Inbox** returns an individual idea;
+  removing a custom group returns all its ideas to Inbox in one transaction,
+  preserving their text, projects, tags, pins and creation times.
+  Inbox is the permanent default. The existing built-in views remain available;
+  Pinned is a view across groups. Removing an idea from Pinned also unpins it.
+  Archiving clears custom-group membership; restoring returns it to Inbox.
 - Search matches every whitespace-separated word, anywhere in idea content,
   project names or assigned tag names. Words can match different fields. Search
   is literal, case-insensitive for ordinary Latin text and debounced by 180 ms.
@@ -126,7 +134,7 @@ support enabled; this application does not install desktop extensions.
 - Drag the three panel boundaries to resize them. Panel sizes, window dimensions
   and theme persist in TOML. Light is the default; select a theme in **Theme**.
 - Right-click an idea to pin/unpin, archive or view **Details** (creation and
-  last-modified timestamps in local time, including the UTC offset). Archived
+  last-modified timestamps in local time, using `DD.MM.YYYY, HH:MM:SS` and a timezone label). Archived
   ideas also offer **Restore to Inbox** and **Delete permanently**. Restore keeps
   content, project, tags, pin and creation time; deletion asks for confirmation
   and removes the idea and its tag/FTS associations. It cannot be undone in Idea,
@@ -170,8 +178,9 @@ Default locations respect `XDG_DATA_HOME` and `XDG_CONFIG_HOME`:
 - Configuration: `~/.config/idea/config.toml`
 
 SQLite foreign keys, transactional writes, WAL and FULL synchronous mode protect
-consistency. Schema version 1 is recorded in `PRAGMA user_version`; newer schemas
-are rejected, and existing databases are backed up before initial migration.
+consistency. Schema version 2 is recorded in `PRAGMA user_version`; newer schemas
+are rejected, and existing databases are backed up before migration. Version 1 upgrades to version 2 transactionally to add custom
+groups without changing existing content, organization or timestamps.
 
 A consistent backup is made on the first launch of each UTC day. Keep the newest
 seven automatic backups. There is no periodic background worker: a long-running
@@ -204,7 +213,8 @@ permissions. Store it somewhere protected if the content is sensitive.
 
 **File → Export JSON** writes the versioned `idea-inbox` format, containing all
 ideas, projects (including colors/creation dates), tags and relationships. It
-preserves idea content, status, pinned state and timestamps. Existing export files
+preserves idea content, status, custom groups, pinned state and timestamps.
+JSON format version 2 adds groups; version 1 imports remain supported. Existing export files
 are rejected, even if the file dialog's overwrite prompt was accepted.
 
 **Export Markdown** creates a new timestamped directory under a chosen parent.
@@ -244,15 +254,15 @@ Measured on Linux/Python 3.14.4/Qt 6.11.2 with **offscreen Qt**, not a desktop c
 
 | Measurement | Result |
 | --- | --- |
-| All 10,000 rows, median | 36.18 ms |
-| Content search, median, 10,000 matches | 41.96 ms |
-| Project-name search, median, 5,000 matches | 21.90 ms |
-| Tag-name search, median, 2,000 matches | 12.32 ms |
-| Combined filters, median, 39 matches | 1.54 ms |
-| GUI construction through first offscreen display | 100.93 ms |
-| Fresh-process first display, including startup backup | 273.43 ms |
-| Peak process RSS, including Qt and generated dataset | 122.96 MiB |
-| Idle CPU over a two-second event-loop sample | 0.13% of one core |
+| All 10,000 rows, median | 41.76 ms |
+| Content search, median, 10,000 matches | 46.52 ms |
+| Project-name search, median, 5,000 matches | 24.45 ms |
+| Tag-name search, median, 2,000 matches | 14.04 ms |
+| Combined filters, median, 39 matches | 1.60 ms |
+| GUI construction through first offscreen display | 110.15 ms |
+| Fresh-process first display, including startup backup | 289.35 ms |
+| Peak process RSS, including Qt and generated dataset | 124.04 MiB |
+| Idle CPU over a two-second event-loop sample | 0.16% of one core |
 
 These are observations, not guarantees. GUI construction excludes interpreter,
 module import and automatic-backup time. Searches are synchronous and materialize
@@ -260,7 +270,7 @@ result records; much larger collections, very large individual notes, one-charac
 queries, backup/export/import and slow storage can pause the UI. The tests and
 measurements cover the specified 10,000-idea dataset, not every hardware/desktop
 combination. Fresh-process startup was measured with a warm filesystem cache;
-no cold-filesystem or long-duration idle benchmark was performed. All 99 tests
+no cold-filesystem or long-duration idle benchmark was performed. All 114 tests
 passed in the final validation run.
 
 
@@ -274,3 +284,8 @@ the app warns and falls back for relative values, while the desktop installer
 rejects relative paths. An isolated Ubuntu Wayland smoke test passed capture,
 pin, archive, restoration, deletion and database integrity checks with a tray
 available. No real notes were used in validation.
+
+The custom-group implementation adds a group lookup and metadata to idea reads.
+Compared with the prior audit on this machine, full text-search medians increased
+from 41.96 ms to 46.52 ms (about 11%); all-row queries increased from 36.18 ms to
+41.76 ms (about 15%). These measurements cover 10,000 ideas.

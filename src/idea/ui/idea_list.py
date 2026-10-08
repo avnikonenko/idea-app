@@ -71,7 +71,7 @@ class IdeaDelegate(QStyledItemDelegate):
         font.setPointSizeF(max(8, font.pointSizeF() - 1))
         painter.setFont(font)
         modified = datetime.fromisoformat(idea.updated_at).astimezone().strftime("%b %d · %H:%M")
-        subtitle = f"{idea.project_name or 'Unassigned'} · {modified} · {idea.status.title()}"
+        subtitle = f"{idea.project_name or 'Unassigned'} · {modified} · {idea.group_name or idea.status.title()}"
         painter.drawText(rect.adjusted(0, 25, 0, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                          painter.fontMetrics().elidedText(subtitle, Qt.TextElideMode.ElideRight, rect.width()))
         painter.restore()

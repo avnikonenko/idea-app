@@ -1,4 +1,4 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QSignalBlocker
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QPlainTextEdit, QComboBox, QCheckBox, QLabel
 from .selectors import ProjectSelector, TagSelector
 from ..models import STATUSES
@@ -11,6 +11,7 @@ class IdeaEditor(QWidget):
 
     def __init__(self, repo, parent=None, before_change=None):
         super().__init__(parent)
+        self.repo = repo
         self.loading = False
         self.idea_id = None
         self.saved_values = None
@@ -24,7 +25,7 @@ class IdeaEditor(QWidget):
         self.pinned = QCheckBox("Pinned")
         form.addRow("Project", self.project)
         form.addRow("Tags", self.tags)
-        form.addRow("Status", self.status)
+        form.addRow("Group", self.status)
         form.addRow("", self.pinned)
         layout.addLayout(form)
         self.content = QPlainTextEdit()
@@ -53,6 +54,7 @@ class IdeaEditor(QWidget):
     def load(self, idea):
         projects = self.project.repo.projects() if idea else []
         tags = self.tags.repo.tags() if idea else []
+        groups = self.repo.groups() if idea else []
         self.loading = True
         try:
             self.idea_id = idea.id if idea else None
@@ -60,7 +62,7 @@ class IdeaEditor(QWidget):
             self.content.setPlainText(idea.content if idea else "")
             self.project.reload(idea.project_id if idea else None, projects=projects)
             self.tags.reload([t.id for t in idea.tags] if idea else [], available=tags)
-            self.status.setCurrentIndex(self.status.findData(idea.status) if idea else 0)
+            self.reload_groups(idea.group_id if idea and idea.group_id is not None else (idea.status if idea else "inbox"), groups=groups)
             self.pinned.setChecked(idea.pinned if idea else False)
             self.set_timestamps(idea)
             self.saved_values = self.values() if idea else None
@@ -71,16 +73,30 @@ class IdeaEditor(QWidget):
         # State-only actions must preserve the plain-text cursor and undo stack.
         self.loading = True
         try:
-            self.status.setCurrentIndex(self.status.findData(idea.status))
+            self.status.setCurrentIndex(self.status.findData(idea.group_id if idea.group_id is not None else idea.status))
             self.pinned.setChecked(idea.pinned)
             self.set_timestamps(idea)
             self.saved_values = self.values()
         finally:
             self.loading = False
 
+    def reload_groups(self, selected=None, *, groups=None):
+        groups = self.repo.groups() if groups is None else groups
+        selected = self.status.currentData() if selected is None else selected
+        with QSignalBlocker(self.status):
+            self.status.clear()
+            for status in STATUSES:
+                self.status.addItem("Archive" if status == "archived" else status.title(), status)
+            for group in groups:
+                self.status.addItem(group.name, group.id)
+            self.status.setCurrentIndex(max(0, self.status.findData(selected)))
+
     def set_timestamps(self, idea):
         self.timestamps.setText(f"Created: {readable_time(idea.created_at)}\nModified: {readable_time(idea.updated_at)}" if idea else "")
 
     def values(self):
         return dict(content=self.content.toPlainText(), project_id=self.project.value(),
-                    tags=list(self.tags.selected), status=self.status.currentData(), pinned=self.pinned.isChecked())
+                    tags=list(self.tags.selected),
+                    status="inbox" if type(self.status.currentData()) is int else self.status.currentData(),
+                    group_id=self.status.currentData() if type(self.status.currentData()) is int else None,
+                    pinned=self.pinned.isChecked())

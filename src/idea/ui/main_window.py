@@ -1,5 +1,5 @@
 from pathlib import Path
-from PySide6.QtCore import Qt, QTimer, QItemSelectionModel
+from PySide6.QtCore import Qt, QTimer, QItemSelectionModel, QSignalBlocker
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QLineEdit, QPushButton, QListView, QListWidget, QLabel, QMenu,
@@ -63,10 +63,18 @@ class MainWindow(QMainWindow):
         side = QVBoxLayout(sidebar)
         self.views = QListWidget()
         self.views.addItems(["All ideas", "Inbox", "Pinned", "Active", "Someday", "Archive"])
+        for row, key in enumerate(("all", "inbox", "pinned", "active", "someday", "archived")):
+            self.views.item(row).setData(Qt.ItemDataRole.UserRole, key)
+        for group in repo.groups():
+            self.views.addItem(group.name)
+            self.views.item(self.views.count() - 1).setData(Qt.ItemDataRole.UserRole, group.id)
         self.views.setCurrentRow(1)
         self.views.setMaximumHeight(190)
         self.views.currentRowChanged.connect(self.filter_changed)
         side.addWidget(self.views)
+        groups = QPushButton("Manage groups")
+        groups.clicked.connect(lambda: self.manage("group"))
+        side.addWidget(groups)
         self.pinned_filter = QCheckBox("Pinned only")
         self.pinned_filter.toggled.connect(self.filter_changed)
         side.addWidget(self.pinned_filter)
@@ -184,10 +192,12 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def filter_values(self):
-        index = self.views.currentRow()
-        status = {1: "inbox", 3: "active", 4: "someday", 5: "archived"}.get(index)
+        item = self.views.currentItem()
+        view = item.data(Qt.ItemDataRole.UserRole) if item else "inbox"
+        status = view if view in ("inbox", "active", "someday", "archived") else None
         return dict(query=self.search.text(), project_id=self.project_filter.value(),
-                    tag_ids=self.tag_filter.selected, status=status, pinned=True if index == 2 or self.pinned_filter.isChecked() else None)
+                    tag_ids=self.tag_filter.selected, status=status, pinned=True if view == "pinned" or self.pinned_filter.isChecked() else None,
+                    group_id=view if type(view) is int else None, ungrouped=view == "inbox")
 
     def refresh(self, *, flush=True, preferred=None):
         if self.refreshing:
@@ -300,6 +310,21 @@ class MainWindow(QMainWindow):
     def pin(self, *, identity=None):
         self.change_idea_state(self.editor.idea_id if identity is None else identity, toggle_pin=True)
 
+    def move_idea(self, identity: int, destination, *, unpin=False):
+        if not self.flush(refresh=False):
+            return
+        try:
+            idea = self.repo.get_idea(identity)
+            status = "inbox" if type(destination) is int else destination
+            self.repo.update_idea(identity, idea.content, idea.project_id, status,
+                                  False if unpin else idea.pinned, [tag.id for tag in idea.tags],
+                                  group_id=destination if type(destination) is int else None)
+            if self.editor.idea_id == identity:
+                self.editor.update_state(self.repo.get_idea(identity))
+            self.refresh()
+        except Exception as exc:
+            self.error("Could not move idea", exc)
+
     def restore_archived(self, identity: int):
         if not self.flush():
             return
@@ -365,6 +390,11 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.error("Could not load idea actions", exc)
             return
+        try:
+            groups = self.repo.groups()
+        except Exception as exc:
+            self.error("Could not load groups", exc)
+            return
         menu = QMenu(self)
         menu.addAction("Pin / unpin", lambda: self.pin(identity=identity))
         if idea.status == "archived":
@@ -372,6 +402,12 @@ class MainWindow(QMainWindow):
             menu.addAction("Delete permanently…", lambda: self.delete_archived(identity))
         else:
             menu.addAction("Archive", lambda: self.archive(identity=identity))
+        destinations = menu.addMenu("Move to group")
+        for name, destination in [("Inbox", "inbox"), ("Active", "active"), ("Someday", "someday")] + [(group.name, group.id) for group in groups]:
+            destinations.addAction(name, lambda checked=False, target=destination: self.move_idea(identity, target))
+        if idea.group_id is not None or idea.status != "inbox" or self.views.currentRow() == 2:
+            unpin = self.views.currentRow() == 2
+            menu.addAction("Remove from group → Inbox", lambda: self.move_idea(identity, "inbox", unpin=unpin))
         menu.addSeparator()
         menu.addAction("Details…", lambda: self.show_details(identity))
         try:
@@ -379,9 +415,23 @@ class MainWindow(QMainWindow):
         finally:
             menu.deleteLater()
 
+    def reload_views(self, groups):
+        item = self.views.currentItem()
+        selected = item.data(Qt.ItemDataRole.UserRole) if item else "inbox"
+        with QSignalBlocker(self.views):
+            self.views.clear()
+            for name, key in (("All ideas", "all"), ("Inbox", "inbox"), ("Pinned", "pinned"), ("Active", "active"), ("Someday", "someday"), ("Archive", "archived")):
+                self.views.addItem(name)
+                self.views.item(self.views.count() - 1).setData(Qt.ItemDataRole.UserRole, key)
+            for group in groups:
+                self.views.addItem(group.name)
+                self.views.item(self.views.count() - 1).setData(Qt.ItemDataRole.UserRole, group.id)
+            row = next((n for n in range(self.views.count()) if self.views.item(n).data(Qt.ItemDataRole.UserRole) == selected), 1)
+            self.views.setCurrentRow(row)
+
     def organization_changed(self):
         try:
-            projects, tags = self.repo.projects(), self.repo.tags()
+            projects, tags, groups = self.repo.projects(), self.repo.tags(), self.repo.groups()
             try:
                 project = self.project_filter.value()
             except ValueError:
@@ -389,6 +439,8 @@ class MainWindow(QMainWindow):
             self.project_filter.reload(project, projects=projects)
             self.project_filter.combo.setItemText(0, "All projects")
             self.tag_filter.reload(self.tag_filter.selected, available=tags)
+            self.reload_views(groups)
+            self.editor.reload_groups(groups=groups)
             # Refresh choices after capture creates organization, without resetting
             # the editor text/cursor or its pending changes.
             editor_project = self.editor.project.combo.currentData()
