@@ -3,37 +3,37 @@
   "qt": "6.11.2",
   "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.43",
   "ideas": 10000,
-  "seed_seconds": 0.579,
+  "seed_seconds": 0.564,
   "search": {
     "all": {
-      "median_ms": 34.91,
-      "max_ms": 47.93,
+      "median_ms": 36.18,
+      "max_ms": 44.76,
       "matches": 10000
     },
     "content": {
-      "median_ms": 41.13,
-      "max_ms": 43.18,
+      "median_ms": 41.96,
+      "max_ms": 45.47,
       "matches": 10000
     },
     "project": {
-      "median_ms": 21.25,
-      "max_ms": 21.82,
+      "median_ms": 21.9,
+      "max_ms": 23.67,
       "matches": 5000
     },
     "tag": {
-      "median_ms": 12.65,
-      "max_ms": 13.45,
+      "median_ms": 12.32,
+      "max_ms": 13.74,
       "matches": 2000
     },
     "combined": {
-      "median_ms": 1.77,
-      "max_ms": 2.85,
+      "median_ms": 1.54,
+      "max_ms": 2.4,
       "matches": 39
     }
   },
-  "gui_construct_show_ms": 107.54,
-  "fresh_process_first_show_ms_with_backup": 331.82,
-  "peak_rss_mib": 123.75,
-  "idle_cpu_percent_2s": 0.26,
+  "gui_construct_show_ms": 100.93,
+  "fresh_process_first_show_ms_with_backup": 273.43,
+  "peak_rss_mib": 122.96,
+  "idle_cpu_percent_2s": 0.13,
   "display": "Qt offscreen (not a compositor)"
 }

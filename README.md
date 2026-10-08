@@ -244,15 +244,15 @@ Measured on Linux/Python 3.14.4/Qt 6.11.2 with **offscreen Qt**, not a desktop c
 
 | Measurement | Result |
 | --- | --- |
-| All 10,000 rows, median | 34.91 ms |
-| Content search, median, 10,000 matches | 41.13 ms |
-| Project-name search, median, 5,000 matches | 21.25 ms |
-| Tag-name search, median, 2,000 matches | 12.65 ms |
-| Combined filters, median, 39 matches | 1.77 ms |
-| GUI construction through first offscreen display | 107.54 ms |
-| Fresh-process first display, including startup backup | 331.82 ms |
-| Peak process RSS, including Qt and generated dataset | 123.75 MiB |
-| Idle CPU over a two-second event-loop sample | 0.26% of one core |
+| All 10,000 rows, median | 36.18 ms |
+| Content search, median, 10,000 matches | 41.96 ms |
+| Project-name search, median, 5,000 matches | 21.90 ms |
+| Tag-name search, median, 2,000 matches | 12.32 ms |
+| Combined filters, median, 39 matches | 1.54 ms |
+| GUI construction through first offscreen display | 100.93 ms |
+| Fresh-process first display, including startup backup | 273.43 ms |
+| Peak process RSS, including Qt and generated dataset | 122.96 MiB |
+| Idle CPU over a two-second event-loop sample | 0.13% of one core |
 
 These are observations, not guarantees. GUI construction excludes interpreter,
 module import and automatic-backup time. Searches are synchronous and materialize
@@ -260,5 +260,17 @@ result records; much larger collections, very large individual notes, one-charac
 queries, backup/export/import and slow storage can pause the UI. The tests and
 measurements cover the specified 10,000-idea dataset, not every hardware/desktop
 combination. Fresh-process startup was measured with a warm filesystem cache;
-no cold-filesystem or long-duration idle benchmark was performed. All 64 tests
+no cold-filesystem or long-duration idle benchmark was performed. All 99 tests
 passed in the final validation run.
+
+
+The bug audit also covers actions while filtered edits change the selected row,
+editor selection and undo retention, cancelled-capture organization refresh,
+failed reads and reentrant save warnings, temporary menu/completer cleanup,
+unrelated or mismatched database rejection, backup connection closure, import
+rollback, and empty/relative XDG settings. Invalid databases are rejected before
+schema or journal changes. Empty XDG settings use the standard default locations;
+the app warns and falls back for relative values, while the desktop installer
+rejects relative paths. An isolated Ubuntu Wayland smoke test passed capture,
+pin, archive, restoration, deletion and database integrity checks with a tray
+available. No real notes were used in validation.
