@@ -64,6 +64,17 @@ class IdeaEditor(QWidget):
         finally:
             self.loading = False
 
+    def update_state(self, idea):
+        # State-only actions must preserve the plain-text cursor and undo stack.
+        self.loading = True
+        try:
+            self.status.setCurrentIndex(self.status.findData(idea.status))
+            self.pinned.setChecked(idea.pinned)
+            self.set_timestamps(idea)
+            self.saved_values = self.values()
+        finally:
+            self.loading = False
+
     def set_timestamps(self, idea):
         self.timestamps.setText(f"Created: {idea.created_at[:19].replace('T', ' ')} UTC\nModified: {idea.updated_at[:19].replace('T', ' ')} UTC" if idea else "")
 

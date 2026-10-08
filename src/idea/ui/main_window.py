@@ -280,7 +280,7 @@ class MainWindow(QMainWindow):
                                   not idea.pinned if toggle_pin else idea.pinned,
                                   [tag.id for tag in idea.tags])
             if self.editor.idea_id == identity:
-                self.editor.load(self.repo.get_idea(identity))
+                self.editor.update_state(self.repo.get_idea(identity))
             self.refresh()
         except Exception as exc:
             self.error("Could not update idea", exc)
@@ -301,7 +301,7 @@ class MainWindow(QMainWindow):
             self.repo.update_idea(identity, idea.content, idea.project_id, "inbox",
                                   idea.pinned, [tag.id for tag in idea.tags])
             if self.editor.idea_id == identity:
-                self.editor.load(self.repo.get_idea(identity))
+                self.editor.update_state(self.repo.get_idea(identity))
             self.refresh()
             self.statusBar().showMessage("Idea restored to Inbox", 3000)
         except Exception as exc:

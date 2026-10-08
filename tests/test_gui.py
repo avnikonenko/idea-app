@@ -294,3 +294,49 @@ def test_closed_context_menus_are_released(window, repo, monkeypatch, qtbot):
         window.context_menu(window.list.visualRect(window.list.currentIndex()).center())
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     assert len(window.findChildren(QMenu)) == baseline
+
+
+def test_pin_keeps_text_selection_and_undo_history(window, repo):
+    content = window.editor.content
+    cursor = content.textCursor()
+    cursor.movePosition(cursor.MoveOperation.End)
+    content.setTextCursor(cursor)
+    content.insertPlainText(" appended")
+    cursor = content.textCursor()
+    cursor.setPosition(2)
+    cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
+    content.setTextCursor(cursor)
+    before = (cursor.position(), cursor.anchor(), cursor.selectedText())
+    assert content.document().isUndoAvailable()
+    window.pin()
+    after = content.textCursor()
+    assert (after.position(), after.anchor(), after.selectedText()) == before
+    assert content.document().isUndoAvailable()
+    content.undo()
+    assert content.toPlainText() == "First"
+
+
+def test_context_action_keeps_original_id_when_results_change(window, repo, monkeypatch):
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QMenu
+    import idea.ui.main_window as main_module
+    other = repo.create_idea("Second note")
+    intended = repo.create_idea("First note")
+    window.refresh()
+    assert window.editor.idea_id == intended
+    def make_menu(parent):
+        menu = QMenu(parent)
+        def choose():
+            try:
+                window.search.setText("Second")
+                window.refresh()
+                assert window.editor.idea_id == other
+                next(a for a in menu.actions() if a.text() == "Pin / unpin").trigger()
+            finally:
+                menu.close()
+        QTimer.singleShot(0, choose)
+        return menu
+    monkeypatch.setattr(main_module, "QMenu", make_menu)
+    window.context_menu(window.list.visualRect(window.list.currentIndex()).center())
+    assert repo.get_idea(intended).pinned
+    assert not repo.get_idea(other).pinned
