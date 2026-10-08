@@ -1,7 +1,7 @@
 # Idea
 
 A small, local-first idea inbox for Ubuntu. Python 3.12+, PySide6, SQLite FTS5,
-and plain text. No accounts, network requests, AI, server or daemon. A panel icon provides quick capture.
+and plain text. No accounts, internet requests, AI, external servers or separate daemon. A panel icon provides quick capture.
 
 ## Install and launch
 
@@ -165,9 +165,32 @@ The capture window is modal to the main window, preventing conflicting edits.
 | Save quick capture | Ctrl+Enter |
 | Close quick capture | Esc, with discard confirmation |
 
-These shortcuts are application-local. There is no global shortcut in this MVP; this avoids desktop-specific Wayland
-shortcut behavior. The explicitly enabled panel icon keeps this same GUI process
-alive when its main window is hidden.
+The shortcuts above are application-local. On Ubuntu/GNOME, install the
+system-wide **Ctrl+Alt+N** quick-capture shortcut:
+
+```bash
+.venv/bin/python tools/install_shortcut.py
+```
+
+The installer checks built-in/custom conflicts and preserves existing shortcuts.
+It adds a per-user [GNOME custom shortcut](https://help.gnome.org/gnome-help/keyboard-shortcuts-set.html)
+that runs this checkout's `.venv/bin/idea --capture`. It supports GNOME on Wayland;
+on other desktops, bind that same command in the desktop's shortcut settings.
+Edit or remove it under **Settings → Keyboard → Custom Shortcuts**.
+
+The command starts Idea if needed, or sends a request to the running instance
+using a [user-only local Qt socket](https://doc.qt.io/QT-6/qlocalserver.html).
+The existing database lock remains in place. No second note writer, internet
+connection, global-key listener or extra daemon is introduced. The panel icon
+keeps the same GUI process alive when its main window is hidden. A second request
+raises an existing capture without clearing its content.
+
+After updating an already-running older Idea, **Quit Idea** from its tray menu
+and reopen it once. A forwarding failure shows a warning and leaves notes intact.
+Very long custom database directory paths can exceed Linux's socket-path limit;
+the default storage path is supported. Desktop focus policy can affect window
+activation; native forwarding and text focus were verified on this Ubuntu
+Wayland session.
 
 ## Storage, backups and restoration
 
@@ -270,7 +293,7 @@ result records; much larger collections, very large individual notes, one-charac
 queries, backup/export/import and slow storage can pause the UI. The tests and
 measurements cover the specified 10,000-idea dataset, not every hardware/desktop
 combination. Fresh-process startup was measured with a warm filesystem cache;
-no cold-filesystem or long-duration idle benchmark was performed. All 114 tests
+no cold-filesystem or long-duration idle benchmark was performed. All 126 tests
 passed in the final validation run.
 
 
@@ -289,3 +312,9 @@ The custom-group implementation adds a group lookup and metadata to idea reads.
 Compared with the prior audit on this machine, full text-search medians increased
 from 41.96 ms to 46.52 ms (about 11%); all-row queries increased from 36.18 ms to
 41.76 ms (about 15%). These measurements cover 10,000 ideas.
+
+Shortcut regression tests cover cold launch, forwarding with pending edits,
+fragmented/invalid requests, socket permissions and cleanup, per-database
+isolation, missing instances, and additive/conflict-safe GNOME installation.
+Socket tests require local Unix sockets to be permitted by the test environment;
+a sandbox that blocks socket binding will need that permission enabled.
