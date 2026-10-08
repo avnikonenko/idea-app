@@ -45,6 +45,7 @@ def test_project_color_conflict_is_preserved(repo, tmp_path):
 @pytest.mark.parametrize("mutation", [
     lambda p: p["ideas"][0].update(tag_ids=[9999]),
     lambda p: p["ideas"][0].update(project_id=True),
+    lambda p: p["ideas"][0].pop("project_id"),
     lambda p: p["ideas"][0].update(pinned=1),
     lambda p: p["ideas"][0].update(status="deleted"),
     lambda p: p["ideas"][0].update(created_at="not-a-date"),
@@ -72,3 +73,31 @@ def test_markdown_long_astral_unicode_filename(repo, tmp_path):
     path = next(destination.iterdir())
     assert len(path.name.encode("utf-8")) <= 255
     assert "content" in path.read_text()
+
+
+def test_import_write_failure_rolls_back_organization_and_ideas(repo, tmp_path, monkeypatch):
+    project = repo.create_project("Research")
+    tag = repo.create_tag("Imported tag")
+    repo.create_idea("first", project, tags=[tag])
+    repo.create_idea("second", project, tags=[tag])
+    source = tmp_path / "source.json"
+    export_json(repo, source)
+    target_db = Database(tmp_path / "target.db", automatic_backup=False)
+    target = Repository(target_db)
+    before = (target.search(), target.projects(), target.tags())
+    original = target._write_idea
+    calls = 0
+    def fail_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated disk error")
+        return original(*args, **kwargs)
+    monkeypatch.setattr(target, "_write_idea", fail_second)
+    try:
+        with pytest.raises(OSError):
+            import_json(target, source)
+        assert (target.search(), target.projects(), target.tags()) == before
+        assert target.search("first") == []
+    finally:
+        target_db.close()

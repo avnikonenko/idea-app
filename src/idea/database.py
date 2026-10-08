@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from datetime import datetime, timezone
 from .models import DEFAULT_TAGS
@@ -20,6 +21,26 @@ class Database:
             version = self.connection.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
                 raise ValueError("This database was created by a newer Idea version.")
+            if version < 0:
+                raise ValueError("Unsupported Idea database schema version.")
+            tables = {row[0] for row in self.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT GLOB 'sqlite_*'"
+            )}
+            if version == 0 and tables:
+                raise ValueError("This is not an empty or versioned Idea database; it was left unchanged.")
+            if version == SCHEMA_VERSION:
+                expected = {"ideas", "projects", "tags", "idea_tags", "ideas_fts"}
+                if not expected <= tables:
+                    raise ValueError("This database is missing required Idea tables; it was left unchanged.")
+                # Prepare reads before backup/WAL setup so mismatched schemas fail
+                # explicitly without changing an existing file.
+                for table, columns in (
+                    ("ideas", "id,content,project_id,status,pinned,created_at,updated_at"),
+                    ("projects", "id,name,name_key,color,created_at"),
+                    ("tags", "id,name,name_key"), ("idea_tags", "idea_id,tag_id"),
+                ):
+                    self.connection.execute(f"SELECT {columns} FROM {table} LIMIT 0")
+                self.connection.execute("SELECT rowid FROM ideas_fts WHERE ideas_fts MATCH ? LIMIT 0", ('"schema check"',))
             if existed and automatic_backup:
                 self.daily_backup(force=version < SCHEMA_VERSION)
             if version == 0:
@@ -96,7 +117,7 @@ class Database:
         with destination.open("xb"):
             pass
         try:
-            with sqlite3.connect(destination) as target:
+            with closing(sqlite3.connect(destination)) as target:
                 self.connection.backup(target)
                 if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise sqlite3.DatabaseError("Backup integrity check failed")

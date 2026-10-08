@@ -88,7 +88,9 @@ def validate_payload(payload: dict) -> None:
             raise ValueError("Invalid idea content/status/pinned flag")
         _timestamp(idea.get("created_at"))
         _timestamp(idea.get("updated_at"))
-        project = idea.get("project_id")
+        if "project_id" not in idea:
+            raise ValueError("Missing idea project_id; use null for an unassigned idea.")
+        project = idea["project_id"]
         if project is not None and _identifier(project) not in ids["projects"]:
             raise ValueError("Unknown project reference")
         tags = idea.get("tag_ids")

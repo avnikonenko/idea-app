@@ -101,3 +101,78 @@ def test_backup_integrity_and_no_overwrite(repo, tmp_path):
         repo.db.backup(path)
     with pytest.raises(ValueError):
         repo.db.backup(repo.db.path)
+
+
+@pytest.mark.parametrize("version", [0, 1, -1])
+def test_unrelated_database_is_rejected_without_mutation(tmp_path, version):
+    path = tmp_path / "other.db"
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("CREATE TABLE important(value TEXT)")
+        conn.execute("INSERT INTO important VALUES('preserve me')")
+        conn.execute(f"PRAGMA user_version={version}")
+        conn.commit()
+    finally:
+        conn.close()
+    before = path.read_bytes()
+    with pytest.raises(ValueError):
+        Database(path)
+    assert path.read_bytes() == before
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize("fail_integrity", [False, True])
+def test_backup_connections_close_on_success_and_failure(repo, tmp_path, monkeypatch, fail_integrity):
+    targets = []
+    class Tracked(sqlite3.Connection):
+        closed = False
+        def execute(self, sql, *args):
+            if fail_integrity and sql == "PRAGMA integrity_check":
+                raise sqlite3.DatabaseError("simulated integrity failure")
+            return super().execute(sql, *args)
+        def close(self):
+            self.closed = True
+            super().close()
+    original = sqlite3.connect
+    def connect(*args, **kwargs):
+        target = original(*args, **kwargs, factory=Tracked)
+        targets.append(target)
+        return target
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    path = tmp_path / "backup.db"
+    if fail_integrity:
+        with pytest.raises(sqlite3.DatabaseError):
+            repo.db.backup(path)
+        assert not path.exists()
+    else:
+        repo.db.backup(path)
+        assert path.exists()
+    assert targets and all(target.closed for target in targets)
+
+
+def test_incompatible_versioned_schema_is_rejected_before_backup(tmp_path):
+    path = tmp_path / "schema.db"
+    database = Database(path, automatic_backup=False)
+    database.connection.execute("ALTER TABLE projects RENAME COLUMN color TO old_color")
+    database.connection.commit()
+    database.close()
+    before = path.read_bytes()
+    with pytest.raises(sqlite3.DatabaseError):
+        Database(path)
+    assert path.read_bytes() == before
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize("schema", ["CREATE TABLE sqliteXimportant(value TEXT)", "CREATE VIEW important AS SELECT 42 AS value"])
+def test_unversioned_custom_schema_is_never_initialized(tmp_path, schema):
+    path = tmp_path / "other.db"
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(schema)
+        conn.commit()
+    finally:
+        conn.close()
+    before = path.read_bytes()
+    with pytest.raises(ValueError):
+        Database(path)
+    assert path.read_bytes() == before
