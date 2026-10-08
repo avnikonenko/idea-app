@@ -6,11 +6,14 @@ import sys
 def test_packaged_application_launch_and_graceful_exit(tmp_path):
     code = '''
 from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication
 from idea.ui.main_window import MainWindow
 from idea.app import main
 original = MainWindow.show
 def show(window):
     original(window)
+    assert QApplication.desktopFileName() == "idea-inbox"
+    assert not window.windowIcon().isNull()
     window.new_idea()
     window.editor.content.setPlainText("Persist across launch")
     QTimer.singleShot(50, window.close)

@@ -42,6 +42,28 @@ Only one application instance can edit a given database at once. This prevents
 stale editors from overwriting one another. A second launch reports the lock;
 it does not open another editor or activate the existing window.
 
+## Desktop icon and login autostart
+
+To install the current checkout for your user:
+
+```bash
+.venv/bin/python tools/install_desktop.py
+```
+
+This adds **Idea** with a lightbulb icon to the application menu and launches its
+main window when you log in. It uses the per-user XDG application/autostart
+locations, following the [Freedesktop autostart specification](https://specifications.freedesktop.org/autostart/latest/).
+It does not start a daemon or change system-wide settings. The application also
+uses its bundled icon for its window, and identifies itself as `idea-inbox` for
+Wayland launcher/dock association.
+
+The installer refers to this checkout's `.venv/bin/idea`; keep that directory in
+place. It refuses to replace conflicting existing files and can be rerun when
+its installed files are identical. To disable login autostart, remove only
+`~/.config/autostart/idea-inbox.desktop` (or the corresponding `XDG_CONFIG_HOME`
+path); the application-menu launcher remains available. Favorites/dock pinning
+can be done through your desktop's normal **Add to Favorites** action.
+
 ## Capture, organize and find ideas
 
 - Click **New idea** to create a blank Inbox idea. The first nonempty line is its
@@ -202,5 +224,5 @@ result records; much larger collections, very large individual notes, one-charac
 queries, backup/export/import and slow storage can pause the UI. The tests and
 measurements cover the specified 10,000-idea dataset, not every hardware/desktop
 combination. Fresh-process startup was measured with a warm filesystem cache;
-no cold-filesystem or long-duration idle benchmark was performed. All 43 tests
+no cold-filesystem or long-duration idle benchmark was performed. All 46 tests
 passed in the final validation run.

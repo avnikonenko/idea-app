@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import QLockFile
+from PySide6.QtGui import QIcon
 from .config import Config, config_path, data_path
 from .database import Database
 from .repository import Repository
@@ -17,6 +18,8 @@ def main(argv=None) -> int:
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Idea")
     app.setOrganizationName("Idea")
+    app.setDesktopFileName("idea-inbox")
+    app.setWindowIcon(QIcon(str(Path(__file__).parent / "assets/idea-inbox.svg")))
     app.setStyle("Fusion")
     cfg_path = args.config or config_path()
     try:
