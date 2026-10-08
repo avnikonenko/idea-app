@@ -2,6 +2,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QPlainTextEdit, QComboBox, QCheckBox, QLabel
 from .selectors import ProjectSelector, TagSelector
 from ..models import STATUSES
+from .dates import readable_time
 
 class IdeaEditor(QWidget):
     edited = Signal()
@@ -78,7 +79,7 @@ class IdeaEditor(QWidget):
             self.loading = False
 
     def set_timestamps(self, idea):
-        self.timestamps.setText(f"Created: {idea.created_at[:19].replace('T', ' ')} UTC\nModified: {idea.updated_at[:19].replace('T', ' ')} UTC" if idea else "")
+        self.timestamps.setText(f"Created: {readable_time(idea.created_at)}\nModified: {readable_time(idea.updated_at)}" if idea else "")
 
     def values(self):
         return dict(content=self.content.toPlainText(), project_id=self.project.value(),

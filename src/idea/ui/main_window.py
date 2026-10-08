@@ -1,5 +1,4 @@
 from pathlib import Path
-from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QItemSelectionModel
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -13,6 +12,7 @@ from .selectors import ProjectSelector, TagSelector
 from .managers import OrganizationManager
 from .quick_capture import QuickCapture
 from .styles import apply_theme
+from .dates import readable_time
 
 class MainWindow(QMainWindow):
     SAVE_DELAY_MS = 350
@@ -344,8 +344,8 @@ class MainWindow(QMainWindow):
             return
         try:
             idea = self.repo.get_idea(identity)
-            created = datetime.fromisoformat(idea.created_at).astimezone().isoformat(timespec="seconds")
-            modified = datetime.fromisoformat(idea.updated_at).astimezone().isoformat(timespec="seconds")
+            created = readable_time(idea.created_at)
+            modified = readable_time(idea.updated_at)
             QMessageBox.information(self, "Idea details",
                                     f"Created: {created}\nLast modified: {modified}")
         except Exception as exc:

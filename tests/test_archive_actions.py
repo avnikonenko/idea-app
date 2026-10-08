@@ -1,4 +1,4 @@
-from datetime import datetime
+from idea.ui.dates import readable_time
 import sqlite3
 import pytest
 from PySide6.QtWidgets import QMessageBox, QMenu
@@ -63,7 +63,7 @@ def test_archive_details_show_creation_and_modified(archive_window, repo, monkey
     window.editor.content.setPlainText("Save before details")
     window.show_details(identity)
     idea = repo.get_idea(identity)
-    assert messages == [f"Created: {datetime.fromisoformat(idea.created_at).astimezone().isoformat(timespec='seconds')}\nLast modified: {datetime.fromisoformat(idea.updated_at).astimezone().isoformat(timespec='seconds')}"]
+    assert messages == [f"Created: {readable_time(idea.created_at)}\nLast modified: {readable_time(idea.updated_at)}"]
     assert idea.content == "Save before details"
 
 
@@ -106,3 +106,20 @@ def test_failed_flush_blocks_restore_and_delete(archive_window, repo, monkeypatc
     window.delete_archived(identity)
     assert repo.get_idea(identity).status == "archived"
     assert window.editor.content.toPlainText() == "Unsaved text" and window.dirty
+
+
+def test_readable_timestamp_uses_local_calendar_time(monkeypatch):
+    import os
+    import time
+    previous = os.environ.get("TZ")
+    try:
+        monkeypatch.setenv("TZ", "Europe/Prague")
+        time.tzset()
+        assert readable_time("2026-10-08T08:15:30.123456+00:00") == "08.10.2026, 10:15:30 CEST"
+        assert readable_time("2026-01-08T08:15:30+00:00") == "08.01.2026, 09:15:30 CET"
+    finally:
+        if previous is None:
+            monkeypatch.delenv("TZ")
+        else:
+            monkeypatch.setenv("TZ", previous)
+        time.tzset()
