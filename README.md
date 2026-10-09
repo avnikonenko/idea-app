@@ -76,4 +76,4 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 
 Tests use temporary data. Socket tests require permission to use local Unix
 sockets. Benchmarks generate 10,000 sample ideas and `benchmark-preview.png`;
-[recorded measurements](benchmark-results.json) are observations, not guarantees.
+[recorded measurements](benchmark-results.json).
