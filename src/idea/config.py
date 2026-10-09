@@ -26,7 +26,7 @@ def config_path() -> Path:
 
 @dataclass
 class Config:
-    theme: str = "light"
+    theme: str = "dark"
     splitter: list[int] = field(default_factory=lambda: [180, 320, 560])
     width: int = 1060
     height: int = 720
@@ -37,7 +37,7 @@ class Config:
             return cls()
         with path.open("rb") as source:
             values = tomllib.load(source)
-        theme = values.get("theme", "light")
+        theme = values.get("theme", "dark")
         splitter = values.get("splitter", [180, 320, 560])
         width, height = values.get("width", 1060), values.get("height", 720)
         if theme not in ("light", "dark") or not isinstance(splitter, list) or len(splitter) != 3 or any(type(n) is not int or n < 0 for n in splitter):
