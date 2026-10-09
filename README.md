@@ -1,9 +1,8 @@
 # Idea
 
-A small, local-first idea manager for Ubuntu. Capture plain-text notes, find them
+A small, local offline idea manager for Ubuntu. Capture plain-text notes, find them
 quickly, and organize them with projects, tags and manual groups. No accounts,
-cloud services or AI. **Dark mode is the default**; light mode is available under
-**Theme**.
+cloud services or AI.
 
 ![Idea in dark mode with sample notes](docs/images/main-window.png)
 
